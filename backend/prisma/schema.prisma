@@ -4,11 +4,338 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// === ENUM ===
+enum AuthProvider {
+  LOCAL     // email + password
+  GOOGLE    // google id token
+  FACEBOOK  // facebook access token
+  APPLE     // apple id token
+}
+
+enum AccountStatus {
+  ACTIVE    // Tài khoản hoạt động bình thường
+  BANNED    // Tài khoản bị khóa
+  SUSPENDED // Tài khoản bị đình chỉ
+}
+
+enum VideoVisibility {
+  PUBLIC        // Ai cũng xem được
+  FRIENDS_ONLY  // Chỉ bạn bè xem được
+  PRIVATE       // Chỉ mình tôi xem được
+}
+
+enum NotificationType {
+  LIKE        // Thích video
+  COMMENT     // Bình luận video
+  FOLLOW      // Theo dõi tài khoản
+  MENTION     // Được nhắc tên
+}
+
+
+// ==== MASTER DATA ===
+model Language {
+  id       Int      @id @default(autoincrement())
+  // autoincrement thay vì UUID: master data ít record, int tiết kiệm hơn
+  code     String   @unique @db.VarChar(10)  // "vi", "en", "jp"
+  name     String   @db.VarChar(50)          // "Vietnamese", "English"
+  isActive Boolean  @default(true)
+  users    User[]
+
+  @@map("languages") // Table name trong PostgreSQL = "languages" (snake_case)
+}
+
+model SystemSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(100) // "max_upload_size", "maintenance_mode"
+  value       String   @db.Text                 // Text vì value có thể rất dài
+  description String?  @db.VarChar(255)         // Mô tả cho dev hiểu
+  updatedAt   DateTime @updatedAt               // Tự động cập nhật khi edit
+
+  @@map("system_settings")
+}
+
+
+// ==== USER ===
+model User {
+  id             String        @id @default(uuid())
+  // UUID thay vì autoincrement vì:
+  // 1. Không lộ tổng số user (id=1000 → biết có ~1000 user)
+  // 2. Không đoán được URL (/users/1, /users/2...)
+  // 3. Merge data từ nhiều DB dễ hơn (không conflict id)
+
+  // --- Login Info ---
+  email          String?       @unique
+  // Nullable vì: user đăng nhập bằng phone hoặc SSO không cấp email
+  phone          String?       @unique
+  password       String?
+  // Nullable vì: SSO users không có password (login bằng Google token)
+  provider       AuthProvider  @default(LOCAL)
+  providerId     String?
+  // ID từ Google/Facebook. VD: Google trả "1234567890", lưu ở đây
+  // Dùng để check user đã từng login bằng Google chưa
+
+  // --- Profile Info ---
+  username       String        @unique @db.VarChar(50)
+  // @unique: không ai trùng username
+  // @db.VarChar(50): giới hạn 50 ký tự ở DB level (ngoài validation ở app)
+  displayName    String        @db.VarChar(100)
+  avatarUrl      String?       @db.Text
+  // Text thay vì VarChar vì URL có thể rất dài (Cloudinary URL ~200 chars)
+  bio            String?       @db.VarChar(200) // Giới hạn 200 ký tự như TikTok
+  dob            DateTime?     @db.Date         // Chỉ lưu ngày, không cần giờ
+  gender         Int?          // 0: Khác, 1: Nam, 2: Nữ
+  isVerified     Boolean       @default(false)  // Tích xanh
+  status         AccountStatus @default(ACTIVE)
+
+  // --- Settings ---
+  languageId     Int?
+  language       Language?     @relation(fields: [languageId], references: [id])
+
+  // --- Denormalized Counters ---
+  // Tại sao lưu counter trong User thay vì COUNT(*) mỗi lần?
+  // SELECT COUNT(*) FROM follows WHERE followingId = 'xxx' → FULL TABLE SCAN
+  // Với 1 triệu followers → mỗi request profile mất 500ms+
+  // Lưu counter → query O(1), chỉ cần WHERE id = 'xxx'
+  followerCount  Int           @default(0)
+  followingCount Int           @default(0)
+  totalLikes     Int           @default(0)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // --- Relations ---
+  videos         Video[]
+  comments       Comment[]
+  likes          Like[]
+  bookmarks      Bookmark[]
+  followers      Follow[]        @relation("UserFollowers")
+  following      Follow[]        @relation("UserFollowing")
+  sounds         Sound[]         @relation("UserUploadedSounds")
+  refreshTokens  RefreshToken[]
+  sentNotifications     Notification[] @relation("NotificationSender")
+  receivedNotifications Notification[] @relation("NotificationReceiver")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  // Token hash (không lưu token gốc, tương tự password)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // onDelete: Cascade → Xóa user → tự động xóa tất cả refresh tokens
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  // Index vì hay query: "tìm token của user này"
+  @@index([expiresAt])
+  // Index vì cần cleanup: "xóa tokens hết hạn"
+  @@map("refresh_tokens")
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower    User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  // Composite Primary Key: 1 cặp (follower, following) chỉ tồn tại 1 lần
+  // → Không thể follow cùng 1 người 2 lần (DB level constraint)
+  @@id([followerId, followingId])
+  @@index([followingId])
+  // Index followingId vì hay query: "ai follow user này?" (lấy danh sách followers)
+  // followerId đã có index (là phần đầu của composite PK)
+  @@map("follows")
+}
+
+model Sound {
+  id         String   @id @default(uuid())
+  name       String   @db.VarChar(200)
+  audioUrl   String   @db.Text
+  duration   Int      // Giây
+  coverUrl   String?  @db.Text
+
+  uploaderId String?
+  uploader   User?    @relation("UserUploadedSounds", fields: [uploaderId], references: [id], onDelete: SetNull)
+  // onDelete: SetNull → Xóa user → sound vẫn còn (nhưng uploader = null)
+  // Vì nhiều video khác đang dùng sound này, không nên xóa
+
+  useCount   Int      @default(0) // Số video dùng nhạc này
+
+  createdAt  DateTime @default(now())
+  videos     Video[]
+
+  @@map("sounds")
+}
+
+model Video {
+  id              String          @id @default(uuid())
+  title           String?         @db.VarChar(500) // Caption
+
+  // --- Video Source ---
+  originalUrl     String          @db.Text  // MP4 gốc trên S3/Cloudinary
+  hlsUrl          String?         @db.Text  // M3U8 cho HLS streaming
+  // Tại sao cần cả 2?
+  // originalUrl: file gốc, dùng cho download
+  // hlsUrl: file đã convert sang HLS, chia thành chunks 2-3s
+  //         → stream mượt, adaptive bitrate, tiết kiệm data
+  thumbnailUrl    String?         @db.Text  // GIF/JPG preview khi hover
+  coverUrl        String?         @db.Text  // Ảnh tĩnh
+  duration        Float           // Giây (Float vì có thể 15.5s)
+  width           Int             // 1080
+  height          Int             // 1920
+  sizeBytes       BigInt          // Dung lượng file
+  // BigInt vì video có thể > 2GB (Int max = 2.1GB)
+
+  // --- Settings ---
+  visibility      VideoVisibility @default(PUBLIC)
+  allowComments   Boolean         @default(true)
+  allowDuet       Boolean         @default(true)
+  allowDownload   Boolean         @default(true)
+
+  // --- Denormalized Metrics ---
+  // Tất cả counter đều được cập nhật qua Transaction hoặc Batch Update
+  // KHÔNG BAO GIỜ dùng COUNT(*) để tính
+  viewCount       Int   @default(0) // Cập nhật qua Redis CronJob (batch)
+  likeCount       Int   @default(0) // Cập nhật qua Transaction
+  commentCount    Int   @default(0) // Cập nhật qua Transaction
+  shareCount      Int   @default(0) // Cập nhật qua Transaction
+  bookmarkCount   Int   @default(0) // Cập nhật qua Transaction
+  completionRate  Float @default(0) // % user xem hết video → dùng cho feed algorithm
+
+  // --- Foreign Keys ---
+  authorId  String
+  author    User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  soundId   String?
+  sound     Sound? @relation(fields: [soundId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- Relations ---
+  comments  Comment[]
+  likes     Like[]
+  bookmarks Bookmark[]
+  hashtags  VideoHashtag[]
+
+  // --- Indexes ---
+  @@index([createdAt])  // Sort feed theo thời gian
+  @@index([authorId])   // Lấy video của 1 user
+  @@index([soundId])    // Lấy video dùng cùng 1 sound
+
+  @@map("videos")
+}
+
+
+// === Hashtag ===
+model Hashtag {
+  id       String         @id @default(uuid())
+  name     String         @unique @db.VarChar(100)
+  // Lưu KHÔNG có dấu #. VD: "xuhuong", "fyp"
+  // @unique: không trùng tên hashtag
+  useCount Int            @default(0) // Số video dùng tag này
+  videos   VideoHashtag[]
+
+  @@map("hashtags")
+}
+
+model VideoHashtag {
+  videoId   String
+  hashtagId String
+  video     Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  hashtag   Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@id([videoId, hashtagId]) // 1 video không gắn 1 hashtag 2 lần
+  @@map("video_hashtags")
+}
+
+// === Interactions ===
+model Like {
+  userId    String
+  videoId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId]) // 1 user chỉ like 1 video 1 lần
+  @@index([videoId])      // Lấy ai đã like video này
+  @@map("likes")
+}
+
+model Bookmark {
+  userId    String
+  videoId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId])
+  @@map("bookmarks")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+  likeCount Int      @default(0) // Comment cũng có thể "thả tim"
+
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // --- Nested Comments (Reply) ---
+  // parentId = null → comment gốc (top-level)
+  // parentId = "xxx" → reply cho comment "xxx"
+  parentId  String?
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  // --- Mentions ---
+  mentions  String[] // Mảng UserID. VD: ["uuid1", "uuid2"]
+  // Tại sao String[] thay vì relation table?
+  // → Đơn giản hơn cho MVP, mention chỉ cần hiển thị, không cần query ngược
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([videoId, createdAt]) // Lấy comments của video, sort thời gian
+  @@index([parentId])           // Lấy replies của 1 comment
+  @@map("comments")
+}
+
+
+// === Notification ===
+model Notification {
+  id         String           @id @default(uuid())
+  type       NotificationType
+  read       Boolean          @default(false)
+
+  senderId   String
+  sender     User @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  // Optional references — tuỳ loại notification
+  videoId    String?   // Like/Comment nào, trên video nào
+  commentId  String?   // Comment nào (nếu type = COMMENT/MENTION)
+
+  createdAt  DateTime  @default(now())
+
+  @@index([receiverId, read, createdAt])
+  // Composite index cho query: "lấy thông báo chưa đọc của user, sort mới nhất"
+  @@map("notifications")
 }
