@@ -1,0 +1,31 @@
+
+
+services:
+  # PostgreSQL cho local development
+  postgres:
+    image: postgres:15-alpine
+    container_name: tiktok-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: tiktok_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # volumes giữ data khi container restart
+    # Không có volumes → mỗi lần restart mất hết data
+
+  # Redis cho local development
+  redis:
+    image: redis:7-alpine
+    container_name: tiktok-redis
+    ports:
+      - "6379:6379"
+    # Redis mặc định không cần password ở local
+    # Production phải set password
+
+volumes:
+  pgdata:
+    # Named volume — Docker quản lý location trên disk
+    # Data persist giữa các lần docker-compose down/up
