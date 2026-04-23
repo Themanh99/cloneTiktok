@@ -1,0 +1,52 @@
+$kind: http-request
+name: Google Login
+description: Login or register with a Google ID token
+url: "{{baseUrl}}/api/auth/google"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idToken": "<google_id_token>"
+    }
+scripts:
+  - type: afterResponse
+    code: "// Parse response body sang JSON\r
+
+      var jsonData = pm.response.json();\r
+
+      \r
+
+      // Kiểm tra xem request có thành công không (HTTP 200 hoặc 201)\r
+
+      if (pm.response.code === 200 || pm.response.code === 201) {\r
+
+      \    \r
+
+      \    // Nếu có trả về accessToken thì lưu lại\r
+
+      \    if (jsonData && jsonData.accessToken) {\r
+
+      \        pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);\r
+
+      \        console.log(\"Đã tự động lưu accessToken!\");\r
+
+      \    }\r
+
+      \    \r
+
+      \    // Nếu có trả về refreshToken thì lưu lại\r
+
+      \    if (jsonData && jsonData.refreshToken) {\r
+
+      \        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);\r
+
+      \        console.log(\"Đã tự động lưu refreshToken!\");\r
+
+      \    }\r
+
+      }\r\n"
+    language: text/javascript
+order: 5000

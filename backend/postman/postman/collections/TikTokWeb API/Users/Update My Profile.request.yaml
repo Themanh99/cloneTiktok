@@ -1,0 +1,21 @@
+$kind: http-request
+description: Update current user profile
+url: "{{baseUrl}}/api/users/me"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "displayName": "New Display Name",
+      "bio": "My bio here",
+      "avatarUrl": "https://example.com/avatar.jpg",
+      "dob": "2000-01-15",
+      "gender": 0
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{accessToken}}"
+order: 2000

@@ -1,0 +1,11 @@
+$kind: http-request
+description: Get a user public profile by ID
+url: "{{baseUrl}}/api/users/:id"
+method: GET
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: <id>
+    description: id parameter
+order: 4000

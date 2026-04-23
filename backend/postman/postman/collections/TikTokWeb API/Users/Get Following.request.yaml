@@ -1,0 +1,19 @@
+$kind: http-request
+description: Get list of users a user is following
+url: "{{baseUrl}}/api/users/:id/following?limit=10"
+method: GET
+headers:
+  Content-Type: application/json
+queryParams:
+  - key: limit
+    value: "10"
+    description: Number of results
+  - key: cursor
+    value: ""
+    disabled: true
+    description: Cursor for pagination
+pathVariables:
+  - key: id
+    value: <id>
+    description: id parameter
+order: 8000

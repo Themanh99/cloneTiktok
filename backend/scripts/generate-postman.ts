@@ -20,6 +20,7 @@ interface RouteEntry {
   auth?: boolean;
   body?: Record<string, any>;
   query?: { key: string; value: string; description?: string }[];
+  autoSaveTokens?: boolean;
 }
 
 interface FolderEntry {
@@ -46,6 +47,7 @@ const ROUTE_REGISTRY: FolderEntry[] = [
           username: 'johndoe',
           displayName: 'John Doe',
         },
+        autoSaveTokens: true,
       },
       {
         name: 'Login',
@@ -56,6 +58,7 @@ const ROUTE_REGISTRY: FolderEntry[] = [
           email: 'user@example.com',
           password: 'Password123',
         },
+        autoSaveTokens: true,
       },
       {
         name: 'Refresh Token',
@@ -65,6 +68,7 @@ const ROUTE_REGISTRY: FolderEntry[] = [
         body: {
           refreshToken: '<paste_refresh_token_here>',
         },
+        autoSaveTokens: true,
       },
       {
         name: 'Logout',
@@ -84,6 +88,7 @@ const ROUTE_REGISTRY: FolderEntry[] = [
         body: {
           idToken: '<google_id_token>',
         },
+        autoSaveTokens: true,
       },
     ],
   },
@@ -249,6 +254,29 @@ function buildRequestItem(route: RouteEntry) {
         },
       },
     };
+  }
+
+  // Add test script to auto-save tokens if needed
+  if (route.autoSaveTokens) {
+    item.event = [
+      {
+        listen: 'test',
+        script: {
+          type: 'text/javascript',
+          exec: [
+            'var jsonData = pm.response.json();',
+            'if (pm.response.code === 200 || pm.response.code === 201) {',
+            '    if (jsonData.data && jsonData.data.accessToken) {',
+            '        pm.collectionVariables.set("accessToken", jsonData.data.accessToken);',
+            '    }',
+            '    if (jsonData.data && jsonData.data.refreshToken) {',
+            '        pm.collectionVariables.set("refreshToken", jsonData.data.refreshToken);',
+            '    }',
+            '}'
+          ],
+        },
+      },
+    ];
   }
 
   return item;

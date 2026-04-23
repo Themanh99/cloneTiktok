@@ -1,0 +1,15 @@
+$kind: http-request
+description: Follow a user
+url: "{{baseUrl}}/api/users/:id/follow"
+method: POST
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: <id>
+    description: id parameter
+auth:
+  type: bearer
+  credentials:
+    token: "{{accessToken}}"
+order: 5000

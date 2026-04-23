@@ -1,0 +1,3 @@
+$kind: collection
+description: User profile, follow/unfollow, search endpoints
+order: 2000

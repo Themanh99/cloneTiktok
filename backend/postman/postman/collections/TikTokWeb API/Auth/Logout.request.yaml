@@ -1,0 +1,17 @@
+$kind: http-request
+description: Invalidate the refresh token
+url: "{{baseUrl}}/api/auth/logout"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "refreshToken": "<paste_refresh_token_here>"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{accessToken}}"
+order: 4000

@@ -1,0 +1,16 @@
+$kind: collection
+name: TikTokWeb API
+description: |-
+  API collection for TikTokWeb backend.
+
+  **Setup:**
+  1. Create an environment with `baseUrl` = `http://localhost:3000`
+  2. Register/Login to get tokens
+  3. Set `accessToken` variable from the login response
+
+  **i18n:**
+  Error responses include a `messageCode` field for frontend i18n lookup.
+variables:
+  baseUrl: http://localhost:3000
+  accessToken: ""
+  refreshToken: ""

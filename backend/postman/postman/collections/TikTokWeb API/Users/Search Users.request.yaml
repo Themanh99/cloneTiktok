@@ -1,0 +1,18 @@
+$kind: http-request
+description: Search users by username or display name
+url: "{{baseUrl}}/api/users/search?q=john&limit=10"
+method: GET
+headers:
+  Content-Type: application/json
+queryParams:
+  - key: q
+    value: john
+    description: Search keyword
+  - key: limit
+    value: "10"
+    description: Number of results (1-100)
+  - key: cursor
+    value: ""
+    disabled: true
+    description: Cursor for pagination
+order: 3000
