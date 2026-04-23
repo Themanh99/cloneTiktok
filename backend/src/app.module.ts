@@ -9,20 +9,18 @@ import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
-    // 1. Config Module cần đặt ở đầu để load trước , nếu đặt sau có thằng nào dùng sẽ bị crash
+    // 1. ConfigModule must be loaded first — other modules depend on env vars.
+    // If placed after a module that uses ConfigService, the app will crash.
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
-    // 2. Throttler Module
-    // ttl: 60000ms = 1 phut
-    // limit: 100 request per minute per IP / 1 phut
-
+    // 2. Rate limiting: 100 requests per minute per IP
+    // ttl: 60000ms = 1 minute
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
 
-    // 3. Schedule Module
-
+    // 3. Task scheduling (cron jobs, intervals, timeouts)
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,

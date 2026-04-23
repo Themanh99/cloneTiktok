@@ -5,6 +5,6 @@ export class LoginDto {
   email: string;
 
   @IsString()
-  @MinLength(1) // Không reveal password policy ở login error
+  @MinLength(1) // Do not reveal password policy in login errors
   password: string;
 }

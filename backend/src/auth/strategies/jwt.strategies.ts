@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MessageCode } from '../../common/constants/message-codes';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -12,15 +13,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      //    Read token from header Authorization
+      // Reads the token from the Authorization header
       ignoreExpiration: false,
-      // False  = auto reject token was expired
+      // false = auto-reject expired tokens
       secretOrKey: configService.get<string>('JWT_ACCESS_SECRET'),
     });
   }
 
-  //   validate chay sau khi token da verify thanh cong
-  //  payload { sub: userId , email , username, iat, exp}
+  // validate() runs after the token has been successfully verified.
+  // payload: { sub: userId, email, iat, exp }
   async validate(payload: { sub: string; email: string }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
@@ -35,14 +36,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException({
+        message: 'User not found',
+        messageCode: MessageCode.USER_NOT_FOUND,
+      });
     }
 
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('User not active');
+      throw new UnauthorizedException({
+        message: 'User is not active',
+        messageCode: MessageCode.USER_NOT_ACTIVE,
+      });
     }
-    // Object này sẽ gắn vào request.user
-    // → Dùng @CurrentUser() decorator để lấy
+    // This object is attached to request.user
+    // → Use @CurrentUser() decorator to access it
     return user;
   }
 }

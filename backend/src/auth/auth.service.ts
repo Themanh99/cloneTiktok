@@ -6,6 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
+import { MessageCode } from '../common/constants/message-codes';
 
 @Injectable()
 export class AuthService {
@@ -17,13 +18,13 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
-    // Khởi tạo Google OAuth client 1 lần
+    // Initialize Google OAuth client once
     this.googleClient = new OAuth2Client(this.configService.get<string>('GOOGLE_CLIENT_ID'));
   }
 
   // === REGISTER ===
   async register(dto: RegisterDto) {
-    // 1. Check emial + username đã tồn tại hay chưa
+    // 1. Check if email or username already exists
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [
@@ -37,14 +38,20 @@ export class AuthService {
 
     if (existingUser) {
       if (existingUser.email === dto.email) {
-        throw new ConflictException('Email already exists');
+        throw new ConflictException({
+          message: 'Email already exists',
+          messageCode: MessageCode.AUTH_EMAIL_EXISTS,
+        });
       }
-      throw new ConflictException('Username already exists');
+      throw new ConflictException({
+        message: 'Username already exists',
+        messageCode: MessageCode.AUTH_USERNAME_EXISTS,
+      });
     }
 
-    // 2. Hash Password
-    // saltRounds = 10 mỗi hash mất 100ms
-    // Tăng lên 12 nếu muốn bảo mật hơn nhưng chậm hơn 4x
+    // 2. Hash password
+    // saltRounds = 10 → each hash takes ~100ms
+    // Increase to 12 for more security but 4x slower
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     // 3. Create user
@@ -77,18 +84,27 @@ export class AuthService {
     });
 
     if (!user || !user.password) {
-      throw new UnauthorizedException('Email or Password is invalid');
+      throw new UnauthorizedException({
+        message: 'Email or password is invalid',
+        messageCode: MessageCode.AUTH_INVALID_CREDENTIALS,
+      });
     }
 
-    // 2. Compate password
+    // 2. Compare password
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Email or Password is invalid');
+      throw new UnauthorizedException({
+        message: 'Email or password is invalid',
+        messageCode: MessageCode.AUTH_INVALID_CREDENTIALS,
+      });
     }
 
     // 3. Check account status
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Account is not active');
+      throw new UnauthorizedException({
+        message: 'Account is not active',
+        messageCode: MessageCode.AUTH_ACCOUNT_INACTIVE,
+      });
     }
 
     // 4. Generate tokens
@@ -103,7 +119,7 @@ export class AuthService {
 
   // === REFRESH TOKEN ===
   async refreshToken(refreshToken: string) {
-    // 1. Search token from DB
+    // 1. Look up token in DB
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { token: refreshToken },
       include: {
@@ -112,23 +128,29 @@ export class AuthService {
     });
 
     if (!storedToken) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException({
+        message: 'Invalid refresh token',
+        messageCode: MessageCode.AUTH_INVALID_REFRESH_TOKEN,
+      });
     }
 
-    // 2. Check ttl token
+    // 2. Check token expiration
     if (storedToken.expiresAt <= new Date()) {
       await this.prisma.refreshToken.delete({
         where: { id: storedToken.id },
       });
-      throw new UnauthorizedException('Refresh token is expired');
+      throw new UnauthorizedException({
+        message: 'Refresh token has expired',
+        messageCode: MessageCode.AUTH_REFRESH_TOKEN_EXPIRED,
+      });
     }
 
-    // 3. Flow create token: Delete old token + create new token
+    // 3. Token rotation: delete old token, then issue a new pair
     await this.prisma.refreshToken.delete({
       where: { id: storedToken.id },
     });
 
-    // 4. Create pair token new
+    // 4. Generate new token pair
     const tokens = await this.generateTokens(storedToken.user.id, storedToken.user.email);
     await this.saveRefreshToken(storedToken.user.id, tokens.refreshToken);
 
@@ -137,7 +159,7 @@ export class AuthService {
 
   // ==================== LOGOUT ====================
   async logout(refreshToken: string) {
-    // Delete token from DB → no longer be used
+    // Delete token from DB → it can no longer be used
     await this.prisma.refreshToken.deleteMany({
       where: { token: refreshToken },
     });
@@ -146,7 +168,7 @@ export class AuthService {
   // === GOOGLE LOGIN ===
   async googleLogin(idToken: string) {
     // 1. Verify idToken with Google
-    // Google will return email, name , picture , sub
+    // Google returns: email, name, picture, sub
     let googleUser;
     try {
       const ticket = await this.googleClient.verifyIdToken({
@@ -155,10 +177,13 @@ export class AuthService {
       });
       googleUser = ticket.getPayload();
     } catch (error) {
-      throw new UnauthorizedException('Invalid google token');
+      throw new UnauthorizedException({
+        message: 'Invalid Google token',
+        messageCode: MessageCode.AUTH_INVALID_GOOGLE_TOKEN,
+      });
     }
 
-    // 2. Search or create user
+    // 2. Find or create user
     let user = await this.prisma.user.findFirst({
       where: {
         OR: [{ providerId: googleUser.sub, provider: 'GOOGLE' }, { email: googleUser.email }],
@@ -203,13 +228,13 @@ export class AuthService {
   private async generateTokens(userId: string, email: string) {
     const payload = { sub: userId, email };
 
-    // Access Token ttl 15 minutes
+    // Access token — TTL 15 minutes
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_ACCESS_SECRET'),
       expiresIn: this.configService.get('JWT_ACCESS_EXPRIATION') || '15m',
     });
 
-    // Refresh Token ttl 7 days
+    // Refresh token — TTL 7 days
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_REFRESH_SECRET'),
       expiresIn: this.configService.get('JWT_REFRESH_EXPRIATION') || '7d',
@@ -223,20 +248,20 @@ export class AuthService {
 
   private async saveRefreshToken(userId: string, token: string) {
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 ngày
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
     await this.prisma.refreshToken.create({
       data: { token, userId, expiresAt },
     });
   }
 
-  // Loại bỏ sensitive fields trước khi trả về client
+  // Strip sensitive fields before returning to client
   private sanitizeUser(user: any) {
     const { password, providerId, ...sanitized } = user;
     return sanitized;
   }
 
-  // Tạo username từ tên Google (thêm random suffix nếu trùng)
+  // Generate username from Google name (add random suffix to avoid duplicates)
   private generateUsername(name: string): string {
     const base = name.toLowerCase().replace(/[^a-z0-9]/g, '');
     const suffix = Math.floor(Math.random() * 10000);

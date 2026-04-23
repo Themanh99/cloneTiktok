@@ -1,11 +1,11 @@
 import { IsString, IsInt, Min, Max, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
-// DTO cho Cursor-based Pagination
-// Tại sao cursor thay vì offset/limit?
-// - Feed video thêm mới liên tục
-// - Offset: load page 2 → video mới insert → page 2 bị lặp video page 1
-// - Cursor: "cho tôi 10 video SAU video có id=xxx" → không bao giờ lặp
+// DTO for Cursor-based Pagination
+// Why cursor instead of offset/limit?
+// - Video feeds are constantly being updated with new content
+// - Offset: load page 2 → new video inserted → page 2 repeats items from page 1
+// - Cursor: "give me 10 videos AFTER video id=xxx" → never duplicates
 export class PaginationDto {
   @IsOptional()
   @IsString()
@@ -15,6 +15,6 @@ export class PaginationDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  @Type(() => Number) // Chuyển query string → number tự động
+  @Type(() => Number) // Auto-cast query string → number
   limit?: number = 10;
 }

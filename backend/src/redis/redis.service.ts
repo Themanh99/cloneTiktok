@@ -27,10 +27,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   // === Wrapper methods ===
-  // Tại sao wrap thay vì expose client trực tiếp?
-  // 1. Dễ test (mock RedisService thay vì mock Redis client)
-  // 2. Dễ thay đổi implementation (đổi ioredis sang redis, chỉ sửa 1 file)
-  // 3. Thêm logging/metrics dễ dàng
+  // Why wrap instead of exposing the client directly?
+  // 1. Easier to test (mock RedisService instead of mocking the Redis client)
+  // 2. Easier to swap implementations (switch from ioredis to redis — only edit this file)
+  // 3. Simple to add logging/metrics later
 
   async get(key: string): Promise<string | null> {
     return this.client.get(key);
@@ -56,8 +56,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     await this.client.expire(key, seconds);
   }
 
-  // Scan pattern — dùng cho batch update view count
-  // SCAN thay vì KEYS vì KEYS block Redis khi data lớn
+  // Scan pattern — used for batch view count updates
+  // SCAN instead of KEYS because KEYS blocks Redis when the dataset is large
   async scanKeys(pattern: string): Promise<string[]> {
     const keys: string[] = [];
     let cursor = '0';
@@ -69,7 +69,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return keys;
   }
 
-  // Expose raw client cho Socket.io Adapter
+  // Expose raw client for Socket.io Adapter
   getClient(): Redis {
     return this.client;
   }

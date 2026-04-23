@@ -4,6 +4,6 @@ export class GoogleAuthDto {
   @IsString()
   @IsNotEmpty()
   idToken: string;
-  // idToken là JWT token do Google SDK trả về cho frontend
-  // Backend sẽ verify token này với Google servers
+  // idToken is a JWT token returned by the Google SDK to the frontend.
+  // The backend verifies this token with Google servers.
 }
