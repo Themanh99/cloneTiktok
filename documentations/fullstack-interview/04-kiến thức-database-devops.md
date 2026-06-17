@@ -1,295 +1,774 @@
-# Fullstack Interview Guide - Part 2
+# Kiến Thức DevOps, Tooling và Production Operations
 
-# Databases, DevOps, Behavioral
+File này là tài liệu canonical cho Git, Docker, CI/CD, deployment, observability, cloud/Kubernetes cơ bản và vận hành production. Mục tiêu là đọc để hiểu, biết trade-off và nói được trong phỏng vấn fullstack/backend.
 
-> **Part 1:** React, Next.js → `FULLSTACK_GUIDE_PART1.md`
-> **NestJS:** → `NESTJS_MASTERY_GUIDE.md`
+Các phần liên quan:
 
----
+- Database theory và migration chi tiết: `05-kiến thức master database.md`
+- Backend runtime/cache/queue/rate limit: `06-backend-core-knowledge.md`
+- Node.js/NestJS production readiness: `02-nodejs-NESTJS_MASTERY_GUIDE.md`
 
-## VII. Databases
+## 1. Git nâng cao
 
-### 1. MySQL (SQL)
+### 1.1 Git dùng để làm gì?
 
-**Transaction Isolation Levels:**
+Git là hệ thống quản lý phiên bản phân tán. Git giúp team theo dõi thay đổi code, làm việc song song trên branch, review bằng pull request và rollback khi cần.
 
-| Level            | Dirty Read | Non-Repeatable Read | Phantom Read | Hiệu năng  |
-| ---------------- | ---------- | ------------------- | ------------ | ---------- |
-| Read Uncommitted | ✅ Có thể  | ✅ Có thể           | ✅ Có thể    | Nhanh nhất |
-| Read Committed   | ❌         | ✅ Có thể           | ✅ Có thể    | Nhanh      |
-| Repeatable Read  | ❌         | ❌                  | ✅ Có thể    | Trung bình |
-| Serializable     | ❌         | ❌                  | ❌           | Chậm nhất  |
+Cần nắm:
 
-- **Dirty Read**: Đọc data chưa commit từ transaction khác.
-- **Non-Repeatable Read**: Đọc cùng row 2 lần, ra 2 kết quả khác nhau.
-- **Phantom Read**: Query ra số lượng row khác nhau giữa 2 lần đọc.
-- MySQL InnoDB mặc định: **Repeatable Read**.
+- Commit là snapshot thay đổi.
+- Branch là con trỏ tới commit.
+- Merge/rebase là cách đưa thay đổi từ nhánh này sang nhánh khác.
+- Remote như GitHub/GitLab là nơi team chia sẻ repository.
 
-**Clustered vs Non-Clustered Index:**
+Trong phỏng vấn, không chỉ nói biết `git add`, `git commit`, mà cần hiểu cách làm việc an toàn trong team.
 
-- **Clustered**: Sắp xếp data vật lý trên disk theo index. Mỗi bảng chỉ có 1 (thường là Primary Key). Tìm kiếm range rất nhanh.
-- **Non-Clustered**: Tạo cấu trúc riêng trỏ về data. Mỗi bảng có nhiều. Tốn thêm bộ nhớ nhưng tăng tốc query trên cột thường WHERE.
+### 1.2 Merge vs rebase
 
-**Schema Design - Many-to-Many với thuộc tính:**
+Merge đưa thay đổi từ branch này vào branch khác bằng merge commit.
 
-```sql
--- Bảng trung gian có thuộc tính riêng
-CREATE TABLE enrollments (
-  student_id INT REFERENCES students(id),
-  course_id INT REFERENCES courses(id),
-  enrolled_at TIMESTAMP DEFAULT NOW(),
-  grade VARCHAR(2),          -- Thuộc tính trên bảng trung gian
-  status ENUM('active','completed','dropped'),
-  PRIMARY KEY (student_id, course_id)
-);
+Ưu điểm:
+
+- Giữ lịch sử đúng như quá trình làm việc.
+- An toàn cho branch đã push/shared.
+- Ít rủi ro rewrite history.
+
+Nhược điểm:
+
+- History có thể nhiều merge commit.
+- Log có thể khó đọc nếu branch nhỏ quá nhiều.
+
+Rebase đặt lại commit của branch hiện tại lên đầu branch khác.
+
+Ưu điểm:
+
+- History tuyến tính, dễ đọc.
+- Hợp với feature branch cá nhân trước khi mở PR.
+
+Nhược điểm:
+
+- Rewrite history.
+- Nguy hiểm nếu rebase branch đã nhiều người dùng chung.
+
+Câu trả lời:
+
+> Em thường dùng rebase cho feature branch cá nhân để cập nhật với main và giữ history gọn. Với branch shared hoặc production, em tránh rewrite history và dùng merge/revert an toàn hơn.
+
+### 1.3 Revert vs reset
+
+`revert` tạo commit mới đảo ngược thay đổi của commit cũ.
+
+Phù hợp:
+
+- Branch đã push.
+- Production/main branch.
+- Cần rollback an toàn, giữ lịch sử.
+
+`reset` di chuyển HEAD về commit khác.
+
+Phù hợp:
+
+- Dọn commit local chưa push.
+- Chỉnh lịch sử cá nhân.
+
+Nguy hiểm:
+
+- `reset --hard` có thể làm mất thay đổi.
+- Reset branch shared có thể làm team conflict.
+
+Câu trả lời:
+
+> Với main/production, em ưu tiên revert vì nó tạo commit rollback rõ ràng và không rewrite history. Reset chỉ dùng cho local branch hoặc khi team thống nhất rewrite history.
+
+### 1.4 Pull request và code review
+
+PR không chỉ để merge code. PR là nơi kiểm soát chất lượng:
+
+- Correctness.
+- Security.
+- Maintainability.
+- Test coverage.
+- API contract.
+- Migration/deployment risk.
+
+Một PR tốt nên:
+
+- Có scope nhỏ vừa phải.
+- Có mô tả vấn đề và cách giải quyết.
+- Có test hoặc lý do không cần test.
+- Nêu migration/config change nếu có.
+- Không trộn refactor lớn với feature.
+
+## 2. Docker
+
+### 2.1 Docker là gì?
+
+Docker là nền tảng đóng gói ứng dụng và dependency vào container. Container giúp app chạy nhất quán giữa local, staging và production.
+
+Khái niệm:
+
+- Image: template bất biến chứa runtime, dependency, code.
+- Container: instance đang chạy từ image.
+- Dockerfile: file mô tả cách build image.
+- Registry: nơi lưu image, ví dụ Docker Hub, ECR, GCR.
+
+Câu trả lời:
+
+> Docker giúp đóng gói app cùng runtime và dependency để chạy nhất quán ở nhiều môi trường. Image là artifact build ra, container là instance chạy từ image.
+
+### 2.2 Image vs container
+
+Image:
+
+- Bất biến.
+- Có layer.
+- Được build từ Dockerfile.
+- Push/pull qua registry.
+
+Container:
+
+- Runtime instance của image.
+- Có filesystem/process/network riêng.
+- Có thể start/stop/restart.
+
+Ví dụ:
+
+```text
+Dockerfile -> docker build -> image
+image -> docker run -> container
 ```
 
-**Stored Procedures vs Triggers:**
+### 2.3 Dockerfile production
 
-- **Stored Procedure**: Logic SQL lưu sẵn trên DB, gọi thủ công. Ưu: Giảm network roundtrip, tái sử dụng. Nhược: Khó debug, khó version control, lock-in DB.
-- **Trigger**: Tự động chạy khi INSERT/UPDATE/DELETE. Ưu: Tự động hóa audit log. Nhược: Ẩn logic, khó trace bug, giảm hiệu năng.
+Dockerfile production nên:
 
-### 2. MongoDB (NoSQL)
+- Dùng multi-stage build.
+- Dùng base image version cụ thể.
+- Cài dependency bằng lockfile.
+- Chỉ copy artifact cần thiết.
+- Không chứa secret.
+- Chạy bằng non-root user nếu có thể.
+- Có `.dockerignore`.
 
-**Aggregation Pipeline:**
-
-```javascript
-db.orders.aggregate([
-  {
-    $match: { status: "completed", createdAt: { $gte: ISODate("2024-01-01") } },
-  },
-  { $unwind: "$items" },
-  {
-    $group: {
-      _id: "$items.category",
-      totalRevenue: { $sum: { $multiply: ["$items.price", "$items.qty"] } },
-      avgPrice: { $avg: "$items.price" },
-      orderCount: { $sum: 1 },
-    },
-  },
-  { $sort: { totalRevenue: -1 } },
-  { $limit: 10 },
-]);
-```
-
-**Embedded vs Referenced Documents:**
-
-- **Embedded** (lồng nhau): Data luôn đọc cùng nhau, quan hệ 1-1 hoặc 1-ít. VD: User chứa Address.
-  - Ưu: 1 query lấy hết, nhanh.
-  - Nhược: Document size limit 16MB, data trùng lặp.
-- **Referenced** (tham chiếu): Data độc lập, quan hệ nhiều-nhiều, cần truy cập riêng. VD: Post tham chiếu Author.
-  - Ưu: Không trùng lặp, linh hoạt.
-  - Nhược: Cần nhiều query ($lookup).
-
-**Replica Sets & Sharding:**
-
-- **Replica Set**: 1 Primary + N Secondary. Mục đích: High Availability. Primary sập → Secondary tự lên thay.
-- **Sharding**: Chia data ra nhiều server (shard) theo shard key. Mục đích: Scale horizontal khi data quá lớn cho 1 server.
-
-**Transactions trong MongoDB:**
-
-- Hỗ trợ multi-document transactions từ v4.0 (replica set) và v4.2 (sharded cluster).
-- Hạn chế: Performance giảm, timeout 60s mặc định, không nên dùng cho mọi operation.
-
-### 3. Redis
-
-**Use Cases ngoài Caching:**
-
-- **Session Store**: Lưu session user, TTL tự hết hạn.
-- **Pub/Sub**: Real-time messaging giữa services.
-- **Distributed Lock**: `SET lock_key value NX EX 30` → Chỉ 1 process giữ lock.
-- **Leaderboard**: Sorted Set (`ZADD`, `ZREVRANGE`) → Top N ranking.
-- **Rate Limiting**: `INCR` + `EXPIRE` → Đếm request/giây.
-- **Queue**: `LPUSH` + `BRPOP` → Simple job queue.
-
-**Cache Invalidation Strategies:**
-
-- **TTL (Time-to-Live)**: Set expiry time. Đơn giản nhưng data có thể cũ trong khoảng TTL.
-- **Write-Through**: Ghi DB xong ghi cache luôn. Data luôn fresh nhưng chậm hơn.
-- **Write-Behind**: Ghi cache trước, async ghi DB sau. Nhanh nhưng rủi ro mất data.
-- **Cache-Aside**: App đọc cache → miss → đọc DB → ghi cache. Phổ biến nhất.
-
-**Redis Persistence:**
-
-- **RDB (Snapshot)**: Chụp snapshot data theo interval (mỗi 5 phút). Nhỏ gọn, khởi động nhanh. Có thể mất data giữa 2 snapshot.
-- **AOF (Append Only File)**: Log mỗi write command. An toàn hơn (mất tối đa 1 giây data). File lớn hơn, khởi động chậm hơn.
-- **Thực tế**: Bật cả hai. RDB cho backup, AOF cho durability.
-
----
-
-## VIII. DevOps & Tooling
-
-### 1. Git Nâng Cao
-
-**Rollback commit đã push:**
-
-```bash
-# Cách 1: Revert (an toàn, tạo commit ngược lại)
-git revert <commit-hash>
-git push origin main
-
-# Cách 2: Reset (nguy hiểm, xóa lịch sử)
-git reset --hard <commit-hash>
-git push --force origin main  # ⚠️ Chỉ dùng branch riêng
-```
-
-**Git Hooks:**
-Script tự động chạy ở các sự kiện git. Lưu trong `.git/hooks/`.
-
-- `pre-commit`: Chạy linter, format code trước khi commit.
-- `pre-push`: Chạy test trước khi push.
-- `commit-msg`: Kiểm tra format commit message.
-- Dùng `husky` + `lint-staged` cho team consistency.
-
-**Submodules vs Subtrees:**
-
-- **Submodule**: Repo con bên trong repo cha. Git track bằng commit hash. Phức tạp khi cập nhật.
-- **Subtree**: Merge code repo con vào repo cha. Đơn giản hơn, không cần init riêng. Khó tách ngược.
-
-### 2. Docker
-
-**Volumes vs Bind Mounts:**
-
-- **Volume**: Docker quản lý, lưu trong Docker area. Dùng cho production (DB data, persistent storage).
-- **Bind Mount**: Mount thư mục host vào container. Dùng cho development (hot reload source code).
-
-**Docker Networking:**
-
-- **bridge** (mặc định): Container giao tiếp qua mạng ảo. Dùng cho đa số trường hợp.
-- **host**: Container dùng chung network với host. Hiệu năng cao, mất isolation.
-- **none**: Không có mạng. Dùng cho batch job cô lập.
-
-**Tối ưu Docker Image:**
+Ví dụ Node.js:
 
 ```dockerfile
-# Multi-stage build
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-EXPOSE 3000
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+USER node
 CMD ["node", "dist/main.js"]
 ```
 
-- Dùng Alpine base image (nhỏ).
-- Multi-stage build (chỉ copy artifact).
-- `.dockerignore` loại bỏ `node_modules`, `.git`.
-- `npm ci` thay `npm install` (deterministic).
+Vì sao multi-stage?
 
-**Debug container:**
+- Stage build có dev dependency, compiler, source code.
+- Stage runner chỉ giữ artifact production.
+- Image cuối nhỏ hơn, ít bề mặt tấn công hơn.
 
-```bash
-docker exec -it <container_id> sh     # Vào shell
-docker logs -f <container_id>         # Xem log realtime
-docker inspect <container_id>         # Xem config chi tiết
-docker stats                          # Xem CPU/RAM usage
+### 2.4 `.dockerignore`
+
+`.dockerignore` giúp giảm build context.
+
+Ví dụ:
+
+```text
+node_modules
+dist
+.git
+.env
+coverage
+*.log
 ```
 
-### 3. CI/CD
+Nếu không có `.dockerignore`, Docker có thể gửi cả `node_modules`, `.git`, file log, secret vào build context, làm build chậm và rủi ro bảo mật.
 
-**Pipeline cho Fullstack (Next.js + NestJS):**
+### 2.5 Docker Compose
 
-```
-1. Trigger: Push to main/PR
-2. Install: npm ci (cache node_modules)
-3. Lint: ESLint + Prettier check
-4. Test: Unit tests + E2E tests (parallel)
-5. Build: next build + nest build
-6. Docker: Build & push images to registry
-7. Deploy: Update staging → smoke test → production
-```
+Docker Compose dùng để chạy nhiều service local/integration test.
 
-**Blue/Green vs Canary:**
+Ví dụ:
 
-- **Blue/Green**: 2 môi trường giống hệt nhau. Deploy lên Green, test xong → switch traffic từ Blue sang Green. Rollback = switch lại. Tốn gấp đôi infra.
-- **Canary**: Chuyển 5% traffic sang version mới. Monitor. OK thì tăng dần lên 100%. Tiết kiệm hơn, phát hiện lỗi sớm.
+```yaml
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - db
+      - redis
 
-### 4. Monitoring & Logging
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
-**ELK Stack:**
+  redis:
+    image: redis:7-alpine
 
-- **Elasticsearch**: Lưu trữ & tìm kiếm log (full-text search).
-- **Logstash**: Thu thập, parse, transform log từ nhiều nguồn.
-- **Kibana**: Dashboard trực quan hóa log.
-
-**Alternatives:** Datadog, Grafana + Prometheus + Loki, AWS CloudWatch.
-
-**Alerts Setup:**
-
-- Định nghĩa threshold: Error rate > 5%, Response time > 2s, CPU > 80%.
-- Channels: Slack, PagerDuty, Email.
-- Phân cấp: Warning → Critical → P1 Incident.
-
-**Distributed Tracing:**
-Theo dõi 1 request đi qua nhiều services. Mỗi service thêm trace ID/span ID vào headers. Tools: Jaeger, Zipkin, OpenTelemetry.
-
-### 5. Cloud Platforms
-
-**Dịch vụ phổ biến:**
-
-- **Compute**: EC2, ECS, Lambda (serverless), App Engine, Cloud Run.
-- **Storage**: S3, Cloud Storage.
-- **Database**: RDS, DynamoDB, Cloud SQL.
-- **Networking**: VPC, Load Balancer, CloudFront (CDN).
-
-**Deploy & Scale Fullstack:**
-
-```
-                    ┌──────────────┐
-  User ──→ CDN ──→ │ Load Balancer│
-                    └──────┬───────┘
-                    ┌──────┴───────┐
-              ┌─────┤  Next.js     │ (Auto-scale group)
-              │     └──────────────┘
-              │     ┌──────────────┐
-              └────→│  NestJS API  │ (Auto-scale group)
-                    └──────┬───────┘
-                    ┌──────┴───────┐
-                    │  PostgreSQL  │ (RDS Multi-AZ)
-                    │  Redis       │ (ElastiCache)
-                    └──────────────┘
+volumes:
+  postgres_data:
 ```
 
----
+Điểm quan trọng:
 
-## IX. Behavioral Questions (Gợi ý trả lời)
+- Trong container, `localhost` là chính container đó.
+- API connect DB bằng hostname service `db`, không phải `localhost`.
+- `depends_on` không đảm bảo DB ready hoàn toàn, chỉ đảm bảo container được start theo thứ tự.
+- Production cần orchestration, secrets, monitoring, scaling; không bê nguyên compose local lên production nếu chưa đủ.
 
-### 1. Giới thiệu bản thân
+### 2.6 Lỗi Docker hay gặp
 
-**Framework STAR**: Situation → Task → Action → Result.
-"Tôi là Fullstack Developer với ~4 năm kinh nghiệm, chuyên React/Next.js (Frontend) và NestJS (Backend). Dự án gần nhất tôi xây dựng [tên dự án] phục vụ [X users], sử dụng [tech stack]. Vai trò của tôi là [cụ thể]."
+- Image quá nặng vì copy cả repo/dev dependency.
+- Dùng `latest` tag làm build không reproducible.
+- Copy `.env` hoặc secret vào image.
+- Container start nhưng app chưa ready.
+- Dùng `localhost` sai giữa container.
+- Không set memory/CPU limit trong môi trường cần kiểm soát tài nguyên.
+- Không handle graceful shutdown khi container bị stop.
 
-### 2. Xử lý mâu thuẫn trong team
+## 3. CI/CD
 
-"Tôi luôn lắng nghe quan điểm đối phương trước. Nếu bất đồng về kỹ thuật, tôi đề xuất POC (Proof of Concept) hoặc benchmark để data quyết định thay vì cảm tính. Với mâu thuẫn cá nhân, tôi trao đổi riêng 1-1."
+### 3.1 CI/CD là gì?
 
-### 3. Deadline gấp
+CI - Continuous Integration: tự động kiểm tra code khi có thay đổi.
 
-"Tôi ưu tiên tính năng theo MoSCoW (Must/Should/Could/Won't). Communicate sớm với PM/Lead nếu cần cắt scope. Focus vào MVP, đánh đổi code quality có chủ đích và tạo tech debt ticket để trả sau."
+CD - Continuous Delivery/Deployment: tự động build, đóng gói, deploy hoặc chuẩn bị deploy artifact.
 
-### 4. Dự án khó nhất
+Mục tiêu:
 
-Chuẩn bị 1-2 câu chuyện cụ thể:
+- Phát hiện lỗi sớm.
+- Build/deploy nhất quán.
+- Giảm thao tác thủ công.
+- Tăng khả năng rollback/release an toàn.
 
-- **Vấn đề**: "Hệ thống load 10s cho trang danh sách 10k sản phẩm."
-- **Giải pháp**: "Thêm Redis cache, implement pagination cursor-based, ISR với Next.js."
-- **Kết quả**: "Giảm load time từ 10s xuống 800ms, tăng conversion 15%."
+### 3.2 Pipeline cơ bản
 
-### 5. Agile/Scrum
+Một pipeline backend/frontend thường có:
 
-"Team tôi chạy Sprint 2 tuần. Daily standup 15 phút. Sprint Planning đầu sprint, Retrospective cuối sprint. Tôi dùng Jira/Linear để track task. Tôi thấy Agile giúp phản hồi nhanh và giảm rủi ro delivery."
+1. Checkout code.
+2. Install dependency.
+3. Lint.
+4. Typecheck.
+5. Unit test.
+6. Build.
+7. Integration/E2E test nếu có.
+8. Build Docker image/artifact.
+9. Security scan nếu cần.
+10. Push artifact/image.
+11. Deploy staging.
+12. Smoke test.
+13. Promote production.
 
----
+Câu trả lời:
 
-> **Tổng kết 3 files:**
->
-> - `FULLSTACK_GUIDE_PART1.md` → Python, FastAPI, Flask, React, Next.js
-> - `FULLSTACK_GUIDE_PART2.md` → Database, DevOps, Behavioral
-> - `NESTJS_MASTERY_GUIDE.md` → NestJS chuyên sâu
+> Pipeline tốt không chỉ build được app, mà còn kiểm tra chất lượng trước khi deploy: lint, typecheck, test, build artifact, scan nếu cần, deploy staging, smoke test và có rollback strategy.
+
+### 3.3 Artifact và reproducible build
+
+Artifact là sản phẩm build dùng để deploy:
+
+- Docker image.
+- Static frontend build.
+- Backend binary/package.
+
+Nguyên tắc:
+
+- Build một lần, deploy cùng artifact qua staging/production.
+- Gắn version/tag rõ: commit SHA, semver, build number.
+- Không build lại khác nhau cho từng môi trường nếu có thể.
+
+Lợi ích:
+
+- Biết chính xác production đang chạy code nào.
+- Rollback dễ hơn.
+- Debug release dễ hơn.
+
+### 3.4 Migration trong CI/CD
+
+Migration database là phần rủi ro vì rollback code không luôn rollback data/schema được.
+
+Nguyên tắc:
+
+- Migration phải được review trong PR.
+- Migration nên backward-compatible nếu rolling deploy.
+- Thay đổi phá vỡ schema nên tách nhiều bước.
+- Có backup/restore plan cho migration nguy hiểm.
+- Log migration version đã chạy.
+
+Expand/contract pattern:
+
+1. Add column/table mới, không phá code cũ.
+2. Deploy code ghi cả field cũ và mới.
+3. Backfill data.
+4. Deploy code đọc field mới.
+5. Drop field cũ sau khi chắc chắn an toàn.
+
+### 3.5 Rollback
+
+Rollback không chỉ là deploy image cũ.
+
+Cần xem:
+
+- Code rollback.
+- Config rollback.
+- Database schema có còn compatible không?
+- Message/event schema có còn compatible không?
+- Feature flag có thể tắt nhanh không?
+- Có data đã ghi theo format mới không?
+
+Câu trả lời:
+
+> Em xem rollback như một phần của thiết kế release. Nếu deploy có migration hoặc event schema mới, phải đảm bảo backward compatibility hoặc có expand/contract. Feature flag giúp tắt tính năng nhanh mà không cần rollback toàn bộ service.
+
+## 4. Deployment strategy
+
+### 4.1 Rolling deployment
+
+Rolling deployment thay từng instance cũ bằng instance mới.
+
+Ưu điểm:
+
+- Ít tốn tài nguyên.
+- Không downtime nếu app hỗ trợ readiness/graceful shutdown.
+- Phổ biến trong Kubernetes.
+
+Nhược điểm:
+
+- Trong một khoảng thời gian, version cũ và mới chạy song song.
+- Cần backward compatibility giữa code/schema/API/event.
+- Rollback không tức thì bằng blue-green.
+
+### 4.2 Blue-green deployment
+
+Blue-green chạy hai môi trường: blue đang nhận traffic, green là version mới. Sau khi green sẵn sàng, switch traffic sang green.
+
+Ưu điểm:
+
+- Rollback nhanh bằng switch traffic lại blue.
+- Test green trước khi nhận traffic thật.
+
+Nhược điểm:
+
+- Tốn tài nguyên gần gấp đôi.
+- Vẫn phải cẩn thận với database migration dùng chung.
+
+### 4.3 Canary deployment
+
+Canary đưa một phần nhỏ traffic sang version mới trước.
+
+Ưu điểm:
+
+- Giảm rủi ro release.
+- Có thể quan sát metric trước khi rollout toàn bộ.
+
+Nhược điểm:
+
+- Cần routing/traffic splitting.
+- Cần metric/alert tốt.
+- Nếu bug chỉ xảy ra với nhóm user nhỏ, cần phân tích kỹ.
+
+### 4.4 Feature flag
+
+Feature flag cho phép deploy code nhưng bật/tắt tính năng bằng config.
+
+Ưu điểm:
+
+- Tắt nhanh tính năng lỗi.
+- Release dần theo user/tenant/percentage.
+- Tách deploy khỏi release.
+
+Nhược điểm:
+
+- Flag cũ không dọn sẽ thành technical debt.
+- Logic phân nhánh nhiều làm code khó đọc.
+- Cần quản lý quyền thay đổi flag production.
+
+## 5. Observability
+
+### 5.1 Observability là gì?
+
+Observability là khả năng hiểu hệ thống đang hoạt động thế nào từ bên ngoài thông qua logs, metrics và traces.
+
+Monitoring trả lời: hệ thống có đang ổn không?
+
+Observability trả lời sâu hơn: vì sao hệ thống không ổn?
+
+Ba trụ cột:
+
+- Logs: sự kiện chi tiết.
+- Metrics: số liệu đo lường theo thời gian.
+- Traces: đường đi của request qua nhiều service/dependency.
+
+### 5.2 Logging
+
+Log production nên là structured log.
+
+Ví dụ:
+
+```json
+{
+  "level": "error",
+  "message": "Create order failed",
+  "requestId": "req_123",
+  "userId": "user_42",
+  "route": "POST /orders",
+  "latencyMs": 843,
+  "errorCode": "PAYMENT_TIMEOUT"
+}
+```
+
+Log tốt cần:
+
+- Request id/correlation id.
+- User/tenant id nếu phù hợp.
+- Route/action.
+- Error code.
+- Latency.
+- Dependency liên quan.
+
+Không log:
+
+- Password.
+- Access token/refresh token.
+- Secret/API key.
+- PII nhạy cảm nếu không cần.
+
+Pitfall:
+
+- Log chỉ là string không parse được.
+- Không có request id nên không trace được một request.
+- Log quá nhiều gây tốn chi phí và khó tìm.
+- Log quá ít, production bug không debug được.
+
+### 5.3 Metrics
+
+Metrics là số liệu định lượng theo thời gian.
+
+Metrics quan trọng cho API:
+
+- RPS/throughput.
+- Error rate.
+- Latency p50/p95/p99.
+- CPU/memory.
+- DB connection pool active/idle/waiting.
+- Slow query count.
+- Cache hit rate.
+- Queue lag.
+- External dependency latency/error.
+
+RED method cho service:
+
+- Rate: request/second.
+- Errors: error rate.
+- Duration: latency.
+
+USE method cho resource:
+
+- Utilization: mức sử dụng CPU/memory/disk.
+- Saturation: hàng đợi, pool waiting.
+- Errors: lỗi resource.
+
+Câu trả lời:
+
+> Với API production, em luôn muốn nhìn p95/p99 latency, error rate, throughput, DB pool, slow query, cache hit rate và queue lag. Alert nên dựa trên symptom ảnh hưởng user như error rate/latency tăng, không chỉ CPU cao.
+
+### 5.4 Tracing
+
+Tracing theo dõi một request đi qua nhiều bước/service.
+
+Ví dụ trace:
+
+```text
+POST /checkout                 1200ms
+  auth guard                      15ms
+  create order DB                 40ms
+  payment provider              950ms
+  publish order event            30ms
+  serialize response              5ms
+```
+
+Lợi ích:
+
+- Biết bottleneck nằm ở đâu.
+- Debug microservices/external dependency dễ hơn.
+- Thấy request path thực tế.
+
+Không có tracing, team dễ đoán sai nguyên nhân, ví dụ tưởng DB chậm nhưng thật ra payment provider mất 950ms.
+
+### 5.5 Alerting
+
+Alert tốt phải actionable.
+
+Nên alert:
+
+- Error rate vượt ngưỡng.
+- p95/p99 latency tăng mạnh.
+- Queue lag tăng liên tục.
+- DB connection waiting cao.
+- Disk gần đầy.
+- Service restart liên tục.
+
+Không nên:
+
+- Alert quá nhạy gây noise.
+- Alert metric không ai xử lý được.
+- Chỉ alert CPU mà không liên hệ impact user.
+
+## 6. Cloud basics
+
+### 6.1 Các thành phần cloud thường gặp
+
+Cần hiểu concept:
+
+- Compute: VM, container, serverless.
+- Load balancer: phân phối traffic.
+- Object storage: lưu file/media/static asset.
+- Managed database: PostgreSQL/MySQL managed.
+- Cache: Redis/Memcached managed.
+- Queue/event: SQS/PubSub/Kafka managed.
+- CDN: phân phối static/media gần user.
+- IAM: quản lý quyền.
+- Secret manager: lưu secret.
+- VPC/networking: network isolation.
+
+Không cần thuộc tên mọi service, nhưng phải biết vai trò và trade-off.
+
+### 6.2 Managed service trade-off
+
+Ưu điểm:
+
+- Giảm gánh nặng vận hành.
+- Backup/patching/monitoring tốt hơn nếu dùng đúng.
+- Team tập trung vào product.
+
+Nhược điểm:
+
+- Chi phí.
+- Vendor lock-in.
+- Ít quyền kiểm soát thấp tầng.
+- Cần hiểu giới hạn của service.
+
+Câu trả lời:
+
+> Với team nhỏ hoặc sản phẩm cần đi nhanh, em ưu tiên managed service cho database, cache, queue nếu chi phí chấp nhận được. Nhưng vẫn phải hiểu limit, backup, scaling, network và monitoring, không coi managed service là không cần vận hành.
+
+## 7. Kubernetes basics
+
+### 7.1 Kubernetes là gì?
+
+Kubernetes là nền tảng orchestration container. Nó giúp deploy, scale, restart, service discovery và rolling update cho containerized applications.
+
+Khái niệm chính:
+
+- Pod: đơn vị chạy container.
+- Deployment: quản lý replica và rollout.
+- Service: endpoint ổn định để truy cập pod.
+- Ingress: route traffic từ ngoài vào service.
+- ConfigMap: config không nhạy cảm.
+- Secret: secret/config nhạy cảm.
+- HPA: autoscale replica.
+
+### 7.2 Pod và Deployment
+
+Pod là đơn vị nhỏ nhất Kubernetes schedule. Một pod có thể chứa một hoặc nhiều container, nhưng thường một app container chính.
+
+Deployment quản lý:
+
+- Số replica.
+- Rolling update.
+- Rollback.
+- Self-healing khi pod chết.
+
+Câu trả lời:
+
+> Pod là nơi container chạy. Deployment đảm bảo luôn có số pod mong muốn và quản lý rolling update/rollback.
+
+### 7.3 Service và Ingress
+
+Pod có IP thay đổi, nên cần Service làm endpoint ổn định.
+
+Ingress định tuyến HTTP/HTTPS từ bên ngoài vào service.
+
+Ví dụ flow:
+
+```text
+Client
+-> Ingress
+-> Service
+-> Pod
+```
+
+### 7.4 Readiness vs liveness probe
+
+Readiness trả lời: pod đã sẵn sàng nhận traffic chưa?
+
+Nếu readiness fail, pod bị tháo khỏi service endpoint nhưng không nhất thiết bị restart.
+
+Liveness trả lời: app còn sống hay bị treo?
+
+Nếu liveness fail, Kubernetes restart container.
+
+Sai lầm hay gặp:
+
+- Dùng liveness check phụ thuộc DB. Khi DB chập chờn, toàn bộ pod restart hàng loạt.
+- Không có readiness, traffic vào pod khi app chưa warm up xong.
+- Probe quá nhạy làm restart loop.
+
+Câu trả lời:
+
+> Readiness dùng để quyết định pod có nhận traffic không. Liveness dùng để quyết định pod có cần restart không. Em không để liveness phụ thuộc quá nhiều vào DB/external service để tránh restart hàng loạt khi dependency chập chờn.
+
+### 7.5 HPA
+
+HPA - Horizontal Pod Autoscaler - scale số replica theo metric như CPU, memory hoặc custom metric.
+
+Cần chú ý:
+
+- App phải stateless để scale ngang dễ.
+- Scale API không có nghĩa DB/cache/queue chịu được load tăng.
+- Metric CPU không phải lúc nào cũng tốt nhất; có thể cần RPS, queue lag, latency.
+- Scale có độ trễ, không giải quyết spike quá đột ngột nếu không có buffer/backpressure.
+
+## 8. Security và secrets
+
+### 8.1 Secret management
+
+Secret gồm:
+
+- DB password.
+- API key.
+- JWT secret/private key.
+- OAuth client secret.
+- Payment provider key.
+
+Nguyên tắc:
+
+- Không commit secret vào Git.
+- Không copy `.env` vào Docker image.
+- Dùng secret manager hoặc secret injection.
+- Rotate secret khi bị lộ hoặc định kỳ.
+- Giới hạn quyền truy cập theo least privilege.
+- Audit ai truy cập secret production.
+
+### 8.2 Environment strategy
+
+Môi trường thường có:
+
+- Local.
+- CI/test.
+- Staging.
+- Production.
+
+Config nên:
+
+- Tách theo environment.
+- Validate khi app start.
+- Không hardcode trong code.
+- Có default an toàn cho local, nhưng production phải explicit.
+
+Ví dụ app nên fail fast nếu thiếu config quan trọng:
+
+```text
+Missing required env DATABASE_URL
+```
+
+### 8.3 Secret rotation
+
+Quy trình rotation:
+
+1. Tạo secret mới.
+2. Deploy app chấp nhận secret mới, nếu cần chấp nhận cả secret cũ trong giai đoạn chuyển.
+3. Chuyển producer/client sang secret mới.
+4. Thu hồi secret cũ.
+5. Audit xem còn service nào dùng secret cũ không.
+
+Pitfall:
+
+- Rotate JWT secret làm tất cả user logout nếu không hỗ trợ key rotation.
+- Đổi DB password nhưng worker/service phụ chưa update.
+- Secret cũ vẫn còn trong log/CI artifact.
+
+## 9. Production incident và rollback
+
+### 9.1 Khi production lỗi, xử lý thế nào?
+
+Thứ tự thực tế:
+
+1. Xác định impact: bao nhiêu user, endpoint nào, error/latency thế nào.
+2. Mitigate trước: rollback, tắt feature flag, scale, block traffic xấu.
+3. Điều tra nguyên nhân bằng logs/metrics/traces.
+4. Fix lâu dài.
+5. Postmortem: timeline, root cause, action items.
+
+Câu trả lời:
+
+> Khi incident, em ưu tiên giảm impact trước thay vì debug quá lâu. Nếu release mới gây lỗi, rollback hoặc tắt feature flag. Sau khi hệ thống ổn, em mới phân tích root cause và thêm action item như test, alert, runbook để tránh lặp lại.
+
+### 9.2 Runbook
+
+Runbook là hướng dẫn thao tác khi có sự cố.
+
+Nên có:
+
+- Cách rollback.
+- Cách kiểm tra logs/metrics.
+- Cách restart service an toàn.
+- Cách kiểm tra DB/queue/cache.
+- Contact owner.
+- Link dashboard.
+
+Runbook giúp người trực incident không phải nhớ mọi thứ trong lúc áp lực.
+
+## 10. Câu hỏi phỏng vấn hay gặp
+
+### Docker image production nên tối ưu thế nào?
+
+Dùng multi-stage build, base image version cụ thể, cài dependency bằng lockfile, chỉ copy artifact cần thiết, có `.dockerignore`, không copy secret, chạy non-root nếu có thể, image nhỏ và reproducible.
+
+### Docker Compose dùng khi nào?
+
+Docker Compose phù hợp cho local development hoặc integration test nhiều service như API, DB, Redis. Production cần orchestration, secrets, health check, autoscaling, monitoring nên không nên bê nguyên compose local lên production nếu chưa đủ.
+
+### CI/CD pipeline nên có gì?
+
+Lint, typecheck, test, build, build artifact/image, security scan nếu cần, deploy staging, smoke test, promote production và rollback plan. Với database migration cần backward compatibility và review kỹ.
+
+### Rolling, blue-green, canary khác nhau thế nào?
+
+Rolling thay dần instance cũ bằng mới, tiết kiệm tài nguyên nhưng có giai đoạn chạy song song hai version. Blue-green chạy hai môi trường và switch traffic, rollback nhanh nhưng tốn tài nguyên. Canary đưa một phần nhỏ traffic sang version mới để quan sát metric trước khi rollout toàn bộ.
+
+### Monitoring API production cần nhìn gì?
+
+RPS, error rate, latency p95/p99, CPU/memory, DB connection pool, slow query, cache hit rate, queue lag, external dependency latency/error. Alert nên dựa vào impact user như error/latency tăng.
+
+### Readiness khác liveness thế nào?
+
+Readiness quyết định pod có nhận traffic không. Liveness quyết định pod có bị restart không. Readiness có thể phụ thuộc dependency cần thiết, nhưng liveness không nên quá phụ thuộc DB/external service để tránh restart hàng loạt.
+
+### Làm sao quản lý secret an toàn?
+
+Không commit secret, không copy vào image, dùng secret manager/injection, giới hạn quyền, audit access, rotate secret và có quy trình rotation không làm downtime.

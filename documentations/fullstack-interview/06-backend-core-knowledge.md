@@ -1,1427 +1,1021 @@
-# Backend Core Knowledge
+# Kiến Thức Backend Core và Production Patterns
 
-File này tập trung vào phần cần hiểu thật sự khi học backend: bản chất, ví dụ thực tế, lỗi hay gặp khi triển khai. Không đi quá sâu vào lý thuyết hàn lâm.
+File này là tài liệu canonical cho các kiến thức backend production ngoài Node.js/NestJS core và database theory. Mục tiêu là đọc để hiểu bản chất, biết trade-off, biết lỗi thực tế và nói được trong phỏng vấn.
 
----
+Các phần liên quan:
 
-# 1. Database
+- Node.js, TypeScript, NestJS: `02-nodejs-NESTJS_MASTERY_GUIDE.md`
+- Database/index/transaction: `05-kiến thức master database.md`
+- Docker/CI/CD/monitoring: `04-kiến thức-database-devops.md`
+- System design cases: `07-system-design-cases.md`
 
-## 1.1 Index là gì?
+## 1. REST API Design
 
-Index là cấu trúc dữ liệu giúp database tìm dữ liệu nhanh hơn.
+### 1.1 REST API là gì?
 
-Nếu không có index, database thường phải đọc nhiều dòng trong bảng để tìm dữ liệu. Việc này gọi là full table scan.
+REST là phong cách thiết kế API xoay quanh resource. Client thao tác với resource thông qua HTTP method như `GET`, `POST`, `PUT`, `PATCH`, `DELETE`.
 
-Ví dụ:
-
-```sql
-SELECT * FROM users WHERE email = 'a@gmail.com';
-```
-
-Nếu bảng `users` có 10 triệu dòng và không có index trên `email`, database có thể phải quét rất nhiều dòng.
-
-Nếu có index:
-
-```sql
-CREATE INDEX idx_users_email ON users(email);
-```
-
-Database có thể tìm theo `email` nhanh hơn nhiều.
-
-### Cốt lõi cần nhớ
-
-- Index giúp tăng tốc đọc dữ liệu.
-- Index làm chậm ghi dữ liệu vì mỗi lần `INSERT`, `UPDATE`, `DELETE`, database phải cập nhật thêm index.
-- Không phải cứ thêm nhiều index là tốt.
-- Nên index các cột thường dùng trong `WHERE`, `JOIN`, `ORDER BY`.
-- Không nên index cột có quá ít giá trị khác nhau, ví dụ `gender`, `is_active`, nếu query không đủ chọn lọc.
-
-### Ví dụ thực tế
-
-Trong app video:
-
-```sql
-SELECT * FROM videos
-WHERE user_id = 10
-ORDER BY created_at DESC
-LIMIT 20;
-```
-
-Query này nên có index:
-
-```sql
-CREATE INDEX idx_videos_user_created_at
-ON videos(user_id, created_at DESC);
-```
-
-Vì database cần lọc theo `user_id` rồi sắp xếp theo `created_at`.
-
-### Vấn đề khi triển khai
-
-- Thêm index sai làm tốn RAM/disk.
-- Query vẫn chậm nếu index không khớp cách query.
-- Index làm tốc độ insert giảm khi hệ thống ghi nhiều.
-- Với bảng lớn, tạo index có thể lock bảng hoặc tốn tài nguyên mạnh nếu không dùng cách tạo index phù hợp.
-
----
-
-## 1.2 B-tree Index
-
-B-tree là loại index phổ biến nhất trong relational database như PostgreSQL, MySQL.
-
-B-tree lưu dữ liệu theo dạng cây cân bằng, giúp tìm kiếm, so sánh, sort, range query nhanh.
-
-Ví dụ B-tree phù hợp với:
-
-```sql
-WHERE age = 20
-WHERE age > 20
-WHERE created_at BETWEEN '2026-01-01' AND '2026-02-01'
-ORDER BY created_at DESC
-```
-
-### Cốt lõi cần nhớ
-
-B-tree mạnh với:
-
-- Tìm bằng `=`.
-- So sánh `>`, `<`, `>=`, `<=`.
-- Range query.
-- Sort theo thứ tự index.
-- Prefix trong compound index.
-
-B-tree không luôn hiệu quả với:
-
-- `LIKE '%abc'` vì wildcard ở đầu.
-- Query dùng function trên cột nếu không có functional index.
-
-Ví dụ query này có thể không dùng index thường:
-
-```sql
-SELECT * FROM users WHERE LOWER(email) = 'a@gmail.com';
-```
-
-Nếu cần query như vậy thường xuyên, nên tạo functional index:
-
-```sql
-CREATE INDEX idx_users_lower_email ON users(LOWER(email));
-```
-
----
-
-## 1.3 Compound Index
-
-Compound index là index gồm nhiều cột.
-
-Ví dụ:
-
-```sql
-CREATE INDEX idx_videos_user_status_created
-ON videos(user_id, status, created_at DESC);
-```
-
-Index này hữu ích cho query:
-
-```sql
-SELECT * FROM videos
-WHERE user_id = 10
-AND status = 'PUBLIC'
-ORDER BY created_at DESC;
-```
-
-### Quy tắc quan trọng: leftmost prefix
-
-Với index:
-
-```sql
-(user_id, status, created_at)
-```
-
-Database dễ dùng index cho:
-
-```sql
-WHERE user_id = 10
-```
-
-```sql
-WHERE user_id = 10 AND status = 'PUBLIC'
-```
-
-```sql
-WHERE user_id = 10 AND status = 'PUBLIC'
-ORDER BY created_at DESC
-```
-
-Nhưng có thể không dùng tốt index nếu query bỏ qua cột đầu:
-
-```sql
-WHERE status = 'PUBLIC'
-```
-
-Vì `status` không phải cột đầu tiên của index.
-
-### Thứ tự cột trong compound index
-
-Thường đặt theo thứ tự:
-
-1. Cột lọc bằng `=`.
-2. Cột có độ chọn lọc cao.
-3. Cột dùng range hoặc sort.
-
-Ví dụ feed:
-
-```sql
-SELECT * FROM videos
-WHERE status = 'PUBLIC'
-AND created_at < '2026-06-01'
-ORDER BY created_at DESC
-LIMIT 20;
-```
-
-Index hợp lý:
-
-```sql
-CREATE INDEX idx_videos_status_created
-ON videos(status, created_at DESC);
-```
-
-### Lỗi hay gặp
-
-- Tạo index `(created_at, user_id)` nhưng query lại `WHERE user_id = ? ORDER BY created_at`.
-- Tạo quá nhiều compound index gần giống nhau.
-- Không kiểm tra bằng `EXPLAIN`.
-- Dùng index nhưng vẫn sort lại vì thứ tự index không khớp `ORDER BY`.
-
----
-
-## 1.4 EXPLAIN
-
-`EXPLAIN` cho biết database định chạy query như thế nào.
-
-Ví dụ:
-
-```sql
-EXPLAIN ANALYZE
-SELECT * FROM videos
-WHERE user_id = 10
-ORDER BY created_at DESC
-LIMIT 20;
-```
-
-### Khi đọc EXPLAIN cần nhìn gì?
-
-#### 1. Scan type
-
-Các kiểu thường gặp:
-
-- `Seq Scan`: quét tuần tự toàn bảng. Có thể chậm nếu bảng lớn.
-- `Index Scan`: dùng index để tìm dữ liệu.
-- `Index Only Scan`: chỉ đọc index, không cần đọc bảng. Thường rất nhanh.
-- `Bitmap Index Scan`: dùng index để gom danh sách dòng rồi đọc bảng.
-
-#### 2. Rows
-
-Xem database ước lượng bao nhiêu dòng và thực tế trả bao nhiêu dòng.
-
-Nếu estimate sai quá nhiều, query planner có thể chọn plan xấu.
-
-#### 3. Cost
-
-Cost là chi phí ước lượng, không phải thời gian thật. Dùng để database so sánh các plan.
-
-#### 4. Actual time
-
-Với `EXPLAIN ANALYZE`, đây là thời gian chạy thật.
-
-#### 5. Sort
-
-Nếu thấy database phải sort nhiều dòng, có thể cần index hỗ trợ `ORDER BY`.
-
-#### 6. Filter
-
-Nếu thấy database đọc nhiều dòng rồi filter bỏ nhiều dòng, index có thể chưa đủ tốt.
-
-### Ví dụ vấn đề
-
-Query:
-
-```sql
-SELECT * FROM comments
-WHERE video_id = 100
-ORDER BY created_at DESC
-LIMIT 50;
-```
-
-Nếu `EXPLAIN` cho thấy:
+Ví dụ resource:
 
 ```text
-Seq Scan on comments
-Sort
+users
+orders
+products
+notifications
 ```
 
-Nghĩa là database đang quét nhiều comments rồi sort. Index nên có:
+Ví dụ API:
 
-```sql
-CREATE INDEX idx_comments_video_created
-ON comments(video_id, created_at DESC);
+```http
+GET    /users/123
+POST   /users
+PATCH  /users/123
+DELETE /users/123
 ```
 
----
+Điểm cần hiểu:
 
-## 1.5 Transaction
+- URL nên biểu diễn resource, không nên biểu diễn action quá nhiều.
+- HTTP method thể hiện hành động.
+- Status code phải nhất quán.
+- Request/response contract phải ổn định.
+- API cần validation, auth, error format và versioning nếu đã có client dùng thật.
 
-Transaction là nhóm nhiều thao tác database được coi như một đơn vị. Hoặc tất cả thành công, hoặc tất cả rollback.
+Câu trả lời phỏng vấn:
 
-Ví dụ chuyển tiền:
+> REST API nên thiết kế quanh resource. Ví dụ `GET /orders/:id` để lấy order, `POST /orders` để tạo order. Em cố gắng dùng HTTP method và status code đúng nghĩa, response/error format nhất quán, có validation và auth rõ ràng.
 
-```sql
-BEGIN;
+### 1.2 HTTP method
 
-UPDATE accounts SET balance = balance - 100 WHERE id = 1;
-UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+`GET`: lấy dữ liệu, không tạo side effect.
 
-COMMIT;
-```
+`POST`: tạo resource hoặc trigger action không idempotent.
 
-Nếu dòng thứ hai lỗi, cần rollback để không bị mất tiền:
+`PUT`: replace toàn bộ resource, thường idempotent.
 
-```sql
-ROLLBACK;
-```
+`PATCH`: cập nhật một phần resource.
 
-### ACID
-
-Transaction có 4 tính chất:
-
-- Atomicity: tất cả thành công hoặc tất cả thất bại.
-- Consistency: dữ liệu sau transaction vẫn hợp lệ.
-- Isolation: transaction không làm hỏng nhau khi chạy đồng thời.
-- Durability: commit rồi thì dữ liệu được lưu bền vững.
-
-### Ví dụ thực tế
-
-User like video:
-
-1. Thêm record vào `likes`.
-2. Tăng `like_count` trong `videos`.
-
-Nếu chỉ insert like thành công nhưng tăng count fail, dữ liệu lệch. Nên dùng transaction.
-
-```sql
-BEGIN;
-
-INSERT INTO likes(user_id, video_id) VALUES (1, 10);
-UPDATE videos SET like_count = like_count + 1 WHERE id = 10;
-
-COMMIT;
-```
-
-### Lỗi hay gặp
-
-- Transaction quá dài, giữ lock lâu.
-- Gọi API bên ngoài trong transaction, làm transaction chậm và dễ timeout.
-- Không xử lý retry khi deadlock.
-- Không dùng transaction cho flow cập nhật nhiều bảng liên quan.
-
----
-
-## 1.6 Isolation Level
-
-Isolation level quyết định transaction này nhìn thấy dữ liệu của transaction khác như thế nào.
-
-Các vấn đề thường gặp:
-
-### Dirty Read
-
-Transaction A đọc dữ liệu chưa commit từ transaction B. Nếu B rollback, A đã đọc dữ liệu sai.
-
-### Non-repeatable Read
-
-Transaction A đọc cùng một dòng 2 lần nhưng ra kết quả khác nhau vì transaction B đã update và commit giữa chừng.
-
-### Phantom Read
-
-Transaction A chạy cùng một query 2 lần nhưng lần sau xuất hiện thêm dòng mới do transaction B insert.
-
-### Lost Update
-
-Hai transaction cùng đọc một giá trị, cùng update, update sau ghi đè update trước.
+`DELETE`: xóa resource, thường nên idempotent ở góc nhìn client.
 
 Ví dụ:
 
-- Like count ban đầu = 10.
-- Request A đọc 10, tính thành 11.
-- Request B đọc 10, tính thành 11.
-- Cả hai update thành 11.
-- Đúng ra phải là 12.
-
-### Các isolation level phổ biến
-
-#### Read Uncommitted
-
-Ít dùng. Có thể đọc dữ liệu chưa commit.
-
-#### Read Committed
-
-Chỉ đọc dữ liệu đã commit. Đây là mức phổ biến trong nhiều database.
-
-#### Repeatable Read
-
-Trong cùng transaction, đọc lại cùng dữ liệu thường thấy cùng kết quả.
-
-#### Serializable
-
-Mức chặt nhất, gần như các transaction chạy tuần tự. An toàn hơn nhưng chậm hơn và dễ conflict hơn.
-
-### Cách xử lý thực tế
-
-Với counter:
-
-```sql
-UPDATE videos
-SET like_count = like_count + 1
-WHERE id = 10;
+```http
+GET /products?keyword=phone
+POST /orders
+PATCH /users/me/profile
+DELETE /cart/items/123
 ```
 
-Cách này tốt hơn đọc count ra app rồi ghi lại.
+Lỗi thường gặp:
 
-Với nghiệp vụ cần chắc chắn không trùng:
+- Dùng `GET` để tạo/sửa dữ liệu.
+- Dùng `POST /get-user`.
+- Không phân biệt `PUT` và `PATCH`.
+- Delete gọi lại lần hai trả lỗi gây khó retry, trong khi có thể trả `204` nếu resource đã không còn.
 
-- Dùng unique constraint.
-- Dùng transaction.
-- Dùng row lock nếu cần.
-- Retry khi deadlock hoặc serialization failure.
+### 1.3 HTTP status code
 
-Ví dụ tránh like trùng:
+Các status code nên nắm:
 
-```sql
-CREATE UNIQUE INDEX unique_user_video_like
-ON likes(user_id, video_id);
+- `200 OK`: thành công, có body.
+- `201 Created`: tạo mới thành công.
+- `204 No Content`: thành công, không cần body.
+- `400 Bad Request`: request sai format.
+- `401 Unauthorized`: chưa xác thực hoặc token không hợp lệ.
+- `403 Forbidden`: đã xác thực nhưng không có quyền.
+- `404 Not Found`: resource không tồn tại hoặc không được phép tiết lộ.
+- `409 Conflict`: xung đột business state, ví dụ email đã tồn tại.
+- `422 Unprocessable Entity`: validation/domain rule fail nếu team dùng convention này.
+- `429 Too Many Requests`: bị rate limit.
+- `500 Internal Server Error`: lỗi server không mong đợi.
+- `503 Service Unavailable`: service/dependency tạm thời không sẵn sàng.
+
+Câu trả lời:
+
+> Em phân biệt rõ `401` và `403`: `401` là chưa xác thực, `403` là không có quyền. Business conflict như duplicate email nên là `409`, validation input có thể dùng `400` hoặc `422` tùy convention team, nhưng phải nhất quán.
+
+### 1.4 API versioning
+
+API versioning dùng khi contract đã có client phụ thuộc và cần thay đổi breaking change.
+
+Cách phổ biến:
+
+```http
+/api/v1/users
+/api/v2/users
 ```
 
----
+Hoặc version bằng header:
 
-## 1.7 Relational DB vs Non-relational DB
-
-## Relational DB
-
-Ví dụ: PostgreSQL, MySQL, SQL Server.
-
-Dữ liệu lưu theo bảng, có schema rõ ràng, quan hệ qua foreign key.
-
-Phù hợp khi:
-
-- Dữ liệu có quan hệ chặt.
-- Cần transaction mạnh.
-- Cần query phức tạp.
-- Cần consistency cao.
-
-Ví dụ:
-
-- User, order, payment.
-- Banking.
-- E-commerce.
-- Hệ thống cần báo cáo bằng SQL.
-
-Ưu điểm:
-
-- Query mạnh với SQL.
-- ACID tốt.
-- Dữ liệu nhất quán.
-- Dễ enforce constraint.
-
-Nhược điểm:
-
-- Scale ngang phức tạp hơn.
-- Schema thay đổi cần migration.
-- Không phải lúc nào cũng phù hợp với dữ liệu phi cấu trúc.
-
-## Non-relational DB
-
-Ví dụ: MongoDB, Cassandra, DynamoDB, Redis.
-
-Dữ liệu không nhất thiết theo bảng quan hệ. Có thể là document, key-value, wide-column, graph.
-
-Phù hợp khi:
-
-- Dữ liệu linh hoạt, thay đổi nhiều.
-- Cần scale ngang lớn.
-- Truy cập theo pattern đơn giản.
-- Cần tốc độ cao với key-value.
-
-Ví dụ:
-
-- Redis cho cache/session/rate limit.
-- MongoDB cho document linh hoạt.
-- Cassandra/DynamoDB cho workload ghi cực lớn.
-
-Ưu điểm:
-
-- Linh hoạt schema.
-- Scale ngang tốt hơn trong nhiều use case.
-- Tối ưu cho một số pattern cụ thể.
-
-Nhược điểm:
-
-- Join yếu hoặc không có.
-- Transaction có thể hạn chế hơn tùy loại DB.
-- Dễ duplicate dữ liệu.
-- Query phức tạp không tiện bằng SQL.
-
-### Cách chọn nhanh
-
-Nếu dữ liệu có quan hệ rõ, cần transaction, cần query linh hoạt: chọn PostgreSQL/MySQL.
-
-Nếu cần cache/session/rate limit: chọn Redis.
-
-Nếu dữ liệu document linh hoạt và query theo document: có thể chọn MongoDB.
-
-Nếu hệ thống event/log cực lớn, cần ghi và đọc phân tán: cân nhắc Cassandra/DynamoDB/Elasticsearch tùy bài toán.
-
----
-
-# 2. Node.js
-
-## 2.1 Event Loop là gì?
-
-Node.js chạy JavaScript trên một main thread. Nhưng Node.js vẫn xử lý được nhiều request cùng lúc vì các tác vụ I/O như đọc file, gọi database, gọi network được giao cho hệ thống/libuv xử lý bất đồng bộ.
-
-Event loop là cơ chế giúp Node.js nhận callback từ các tác vụ async và đưa chúng vào chạy đúng thời điểm.
-
-### Cốt lõi cần nhớ
-
-- JavaScript trong Node.js chạy trên một thread chính.
-- I/O async không block main thread.
-- CPU-heavy task vẫn block event loop.
-- Promise callback chạy trong microtask queue, thường được ưu tiên hơn các callback của phase khác.
-
-Ví dụ:
-
-```js
-console.log('start');
-
-setTimeout(() => console.log('timeout'), 0);
-
-Promise.resolve().then(() => console.log('promise'));
-
-console.log('end');
+```http
+Accept: application/vnd.company.v2+json
 ```
 
-Kết quả:
+Nguyên tắc:
 
-```text
-start
-end
-promise
-timeout
-```
+- Không tạo version mới cho thay đổi backward-compatible.
+- Add field mới thường không cần version mới.
+- Đổi meaning field, xóa field, đổi response shape lớn thường cần versioning hoặc migration plan.
+- Có deprecation policy cho version cũ.
 
-Vì code sync chạy trước, sau đó microtask của Promise, rồi mới tới timer.
+### 1.5 Error response chuẩn
 
----
+Một API production nên có error format ổn định:
 
-## 2.2 6 phase của Event Loop
-
-Event loop trong Node.js thường được mô tả qua 6 phase chính:
-
-## 1. Timers
-
-Chạy callback của `setTimeout` và `setInterval` khi tới hạn.
-
-```js
-setTimeout(() => {
-  console.log('timer');
-}, 1000);
-```
-
-## 2. Pending callbacks
-
-Chạy một số callback I/O bị hoãn từ vòng trước.
-
-Phần này ít khi làm việc trực tiếp, nhưng cần biết nó tồn tại.
-
-## 3. Idle, prepare
-
-Dùng nội bộ bởi Node.js/libuv. Thường không cần quan tâm khi code app.
-
-## 4. Poll
-
-Phase quan trọng nhất cho I/O.
-
-Node.js chờ và xử lý callback từ:
-
-- File system.
-- Network.
-- Database driver.
-- HTTP request.
-
-Ví dụ:
-
-```js
-fs.readFile('a.txt', () => {
-  console.log('file read done');
-});
-```
-
-Callback này thường được xử lý trong poll phase.
-
-## 5. Check
-
-Chạy callback của `setImmediate`.
-
-```js
-setImmediate(() => {
-  console.log('immediate');
-});
-```
-
-## 6. Close callbacks
-
-Chạy callback khi socket/handle bị đóng.
-
-```js
-socket.on('close', () => {
-  console.log('socket closed');
-});
-```
-
-### Microtask nằm ở đâu?
-
-Microtask không phải một phase trong 6 phase trên.
-
-Microtask gồm:
-
-- `Promise.then`
-- `queueMicrotask`
-- `process.nextTick`
-
-Node.js sẽ xử lý microtask sau khi chạy xong một đoạn JavaScript/callback, trước khi chuyển tiếp sang phase khác.
-
-`process.nextTick` còn được ưu tiên rất cao, cao hơn Promise microtask.
-
-Ví dụ:
-
-```js
-console.log('start');
-
-setTimeout(() => console.log('timeout'), 0);
-setImmediate(() => console.log('immediate'));
-
-Promise.resolve().then(() => console.log('promise'));
-
-process.nextTick(() => console.log('nextTick'));
-
-console.log('end');
-```
-
-Thường thấy:
-
-```text
-start
-end
-nextTick
-promise
-timeout/immediate
-```
-
-Thứ tự giữa `setTimeout(..., 0)` và `setImmediate` có thể thay đổi tùy context. Nếu gọi bên trong I/O callback, `setImmediate` thường chạy trước timer.
-
----
-
-## 2.3 Promise
-
-Promise đại diện cho một kết quả sẽ có trong tương lai: thành công hoặc thất bại.
-
-Promise có 3 trạng thái:
-
-- Pending.
-- Fulfilled.
-- Rejected.
-
-Ví dụ:
-
-```js
-function getUser() {
-  return new Promise((resolve, reject) => {
-    resolve({ id: 1, name: 'An' });
-  });
-}
-
-getUser()
-  .then(user => console.log(user))
-  .catch(error => console.error(error));
-```
-
-Với `async/await`:
-
-```js
-async function main() {
-  try {
-    const user = await getUser();
-    console.log(user);
-  } catch (error) {
-    console.error(error);
-  }
+```json
+{
+  "code": "ORDER_OUT_OF_STOCK",
+  "message": "Product is out of stock",
+  "requestId": "req_123",
+  "details": [
+    {
+      "field": "productId",
+      "reason": "Not enough stock"
+    }
+  ]
 }
 ```
 
-### Cốt lõi cần nhớ
+Lợi ích:
 
-- `async` function luôn trả về Promise.
-- `await` chỉ được dùng trong `async` function hoặc top-level module phù hợp.
-- `await` không block toàn bộ Node.js, nó chỉ tạm dừng function hiện tại.
-- Promise callback chạy trong microtask queue.
+- Frontend xử lý lỗi dễ.
+- Log/trace theo `requestId`.
+- Không leak internal error.
+- Client không phải parse text message.
 
-### Lỗi hay gặp
+Không nên:
 
-#### Quên await
+- Trả raw SQL error.
+- Trả stack trace ra client.
+- Mỗi endpoint một format lỗi.
+- Dùng `500` cho mọi lỗi.
 
-```js
-const user = getUser();
-console.log(user.name);
+## 2. Idempotency
+
+### 2.1 Idempotency là gì?
+
+Idempotency nghĩa là cùng một request logic gọi nhiều lần vẫn chỉ tạo một kết quả/side effect như gọi một lần.
+
+Ví dụ dễ hiểu:
+
+- `GET /users/1` gọi nhiều lần không thay đổi dữ liệu.
+- `DELETE /users/1` gọi lại có thể vẫn trả thành công nếu user đã bị xóa.
+- `POST /orders` mặc định không idempotent, gọi lại có thể tạo hai order.
+
+### 2.2 Khi nào cần idempotency?
+
+Cần idempotency khi:
+
+- Create order.
+- Payment/charge/refund.
+- Webhook từ bên thứ ba.
+- Retry từ client.
+- Retry từ queue consumer.
+- Network timeout nhưng server có thể đã xử lý thành công.
+
+Ví dụ vấn đề:
+
+```text
+Client gọi POST /orders
+Server tạo order thành công
+Response bị timeout trên đường về
+Client retry POST /orders
+Nếu không có idempotency -> tạo 2 order
 ```
 
-`user` ở đây là Promise, không phải object user.
+### 2.3 Cách thiết kế idempotency key
 
-Đúng:
+Client gửi key:
 
-```js
-const user = await getUser();
-console.log(user.name);
+```http
+POST /orders
+Idempotency-Key: user_123:create_order:cart_456
 ```
 
-#### Dùng await tuần tự khi có thể chạy song song
+Server lưu key:
 
-Chậm:
-
-```js
-const user = await getUser();
-const videos = await getVideos();
+```sql
+CREATE TABLE idempotency_keys (
+  key TEXT PRIMARY KEY,
+  status VARCHAR(30) NOT NULL,
+  response_body JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
 ```
 
-Nhanh hơn nếu hai tác vụ độc lập:
+Flow:
 
-```js
-const [user, videos] = await Promise.all([
-  getUser(),
-  getVideos(),
-]);
-```
+1. Nhận request.
+2. Check idempotency key đã tồn tại chưa.
+3. Nếu đã completed, trả lại response cũ.
+4. Nếu chưa có, xử lý request trong transaction.
+5. Lưu key và kết quả.
+6. Nếu request retry, trả lại kết quả đã lưu.
 
-#### Không catch lỗi async
+Điểm cần chú ý:
 
-```js
-app.get('/users', async (req, res) => {
-  const users = await userService.findAll();
-  res.json(users);
-});
-```
+- Key nên gắn với user/account để tránh reuse key sai.
+- Có TTL hoặc cleanup key cũ.
+- Với request đang processing, cần quyết định trả `409`, chờ, hoặc trả status processing.
+- Unique constraint là lớp bảo vệ quan trọng.
 
-Nếu framework không tự handle error async, request có thể lỗi không kiểm soát. Nên dùng error middleware hoặc wrapper tùy framework.
+Câu trả lời:
 
-### Khi nào dùng Promise.all?
+> Với request có side effect như payment hoặc create order, em dùng idempotency key. Server lưu key cùng trạng thái/kết quả. Nếu client retry do timeout, server trả lại kết quả cũ thay vì tạo side effect mới.
 
-Dùng khi các tác vụ độc lập và muốn chạy song song.
+## 3. Cache và Redis
 
-```js
-const [profile, stats, settings] = await Promise.all([
-  getProfile(userId),
-  getStats(userId),
-  getSettings(userId),
-]);
-```
+### 3.1 Cache là gì?
 
-Nếu một Promise fail, `Promise.all` fail ngay.
+Cache là lớp lưu dữ liệu tạm thời để đọc nhanh hơn và giảm tải cho database hoặc external service.
 
-Nếu muốn lấy cả thành công lẫn thất bại:
+Cache phù hợp khi:
 
-```js
-const results = await Promise.allSettled([
-  sendEmail(),
-  sendNotification(),
-  writeLog(),
-]);
-```
+- Data đọc nhiều, ghi ít hơn.
+- Query nặng hoặc external API chậm.
+- Chấp nhận stale data trong một khoảng thời gian.
+- Có hot data/hot endpoint.
 
----
+Không nên dùng cache để che thiết kế database/query quá tệ nếu có thể sửa gốc.
 
-# 3. Redis
+### 3.2 Redis là gì?
 
-Redis là in-memory data store. Dữ liệu chủ yếu nằm trong RAM nên rất nhanh.
-
-Redis thường được dùng làm:
+Redis là in-memory data store, thường dùng cho:
 
 - Cache.
 - Session store.
-- Rate limiter.
+- Rate limit counter.
 - Distributed lock.
-- Pub/Sub.
-- Queue nhẹ.
-- Counter.
-
-## 3.1 Cache
-
-Cache dùng để giảm tải database và tăng tốc response.
-
-Ví dụ:
-
-```text
-Client -> API -> Redis
-              -> nếu miss thì query DB
-              -> lưu lại Redis
-              -> trả response
-```
-
-Pseudo code:
-
-```js
-async function getUserProfile(userId) {
-  const key = `user:${userId}:profile`;
-
-  const cached = await redis.get(key);
-  if (cached) return JSON.parse(cached);
-
-  const user = await db.user.findUnique({ where: { id: userId } });
-  await redis.set(key, JSON.stringify(user), 'EX', 300);
-
-  return user;
-}
-```
-
-### Cốt lõi cần nhớ
-
-- Cache hit: lấy được từ cache.
-- Cache miss: không có cache, phải query DB.
-- TTL: thời gian sống của cache.
-- Cache invalidation: xóa/cập nhật cache khi dữ liệu gốc thay đổi.
-
-### Vấn đề thực tế
-
-#### Cache stale
-
-User đổi avatar nhưng Redis vẫn lưu avatar cũ.
-
-Cách xử lý:
-
-- Xóa cache khi update.
-- Dùng TTL ngắn.
-- Dùng version key nếu cần.
-
-#### Cache stampede
-
-Một key hot hết hạn, nhiều request cùng lúc query DB.
-
-Cách xử lý:
-
-- Lock khi rebuild cache.
-- Random TTL để key không hết hạn cùng lúc.
-- Background refresh.
-
-#### Memory eviction
-
-Redis đầy RAM và phải xóa key theo policy.
-
-Cần cấu hình:
-
-- `maxmemory`.
-- `maxmemory-policy`, ví dụ `allkeys-lru`, `volatile-lru`.
-
----
-
-## 3.2 Session
-
-Redis hay dùng để lưu session vì nhanh và có TTL.
-
-Ví dụ:
-
-```text
-session:abc123 -> { userId: 1, role: 'admin' }
-```
-
-Khi user logout, xóa key session.
+- Pub/sub đơn giản.
+- Queue backend cho một số thư viện.
+- Temporary token/OTP.
 
 Ưu điểm:
 
-- Dễ revoke session.
-- Phù hợp hệ thống nhiều server.
-- Có TTL tự hết hạn.
+- Rất nhanh vì lưu trong memory.
+- Hỗ trợ TTL.
+- Có nhiều data structure: string, hash, list, set, sorted set.
 
-Vấn đề:
+Nhược điểm:
 
-- Redis down có thể làm user bị logout hoặc không xác thực được.
-- Cần backup/replica nếu session quan trọng.
+- Memory đắt hơn disk.
+- Dữ liệu có thể mất nếu cấu hình persistence/replication không phù hợp.
+- Hot key có thể làm nghẽn một shard.
+- Redis down có thể ảnh hưởng app nếu không có fallback.
 
----
+### 3.3 Cache-aside pattern
 
-## 3.3 Rate Limit
+Cache-aside là pattern phổ biến nhất.
 
-Giới hạn số request theo user/IP.
-
-Ví dụ: mỗi IP chỉ được login sai 5 lần/phút.
+Flow đọc:
 
 ```text
-rate:login:ip:1.2.3.4 -> 5
+App đọc cache
+-> cache hit: trả data
+-> cache miss: đọc DB
+-> ghi data vào cache với TTL
+-> trả data
 ```
 
-Pseudo:
+Ví dụ:
 
-```js
-const key = `rate:login:${ip}`;
-const count = await redis.incr(key);
+```ts
+async function getUserProfile(userId: string) {
+  const key = `user_profile:${userId}`;
+  const cached = await redis.get(key);
 
-if (count === 1) {
-  await redis.expire(key, 60);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const profile = await userRepository.findProfile(userId);
+  await redis.set(key, JSON.stringify(profile), "EX", 300);
+  return profile;
 }
-
-if (count > 5) {
-  throw new Error('Too many requests');
-}
 ```
 
-Vấn đề:
+Khi update:
 
-- Cần set TTL đúng.
-- Cần tránh race condition, dùng lệnh atomic như `INCR`.
-- Với nhiều endpoint, cần key rõ ràng.
+```ts
+await userRepository.updateProfile(userId, input);
+await redis.del(`user_profile:${userId}`);
+```
 
----
+Vì sao thường delete cache thay vì update cache?
 
-## 3.4 Distributed Lock
+- Đơn giản hơn.
+- Tránh cache và DB lệch nếu update cache fail.
+- Request sau sẽ rebuild từ DB.
 
-Redis lock dùng để đảm bảo chỉ một worker xử lý một việc tại một thời điểm.
+### 3.4 TTL và invalidation
 
-Ví dụ: chỉ một server được chạy job tạo report mỗi ngày.
+TTL là thời gian cache sống.
 
-Ý tưởng:
+TTL ngắn:
+
+- Data fresh hơn.
+- Cache hit rate thấp hơn.
+- DB load cao hơn.
+
+TTL dài:
+
+- Cache hit rate cao.
+- DB load thấp.
+- Rủi ro stale data cao.
+
+Invaldiation là xóa/làm mới cache khi data thay đổi.
+
+Cần trả lời được:
+
+- Cache key là gì?
+- TTL bao lâu?
+- Khi update data thì invalidation ở đâu?
+- Nếu cache stale, business có chấp nhận không?
+
+### 3.5 Cache stale
+
+Cache stale là cache trả dữ liệu cũ.
+
+Ví dụ:
 
 ```text
-SET lock:daily-report worker-1 NX EX 60
+User đổi display name
+DB đã update
+Cache profile vẫn là tên cũ
+UI hiển thị sai
 ```
-
-Nghĩa là chỉ set key nếu chưa tồn tại, TTL 60 giây.
-
-Vấn đề:
-
-- Lock phải có TTL để tránh chết worker làm kẹt lock mãi.
-- Thời gian xử lý không được dài hơn TTL nếu không có cơ chế renew.
-- Khi unlock phải đảm bảo chỉ owner của lock được xóa lock.
-
----
-
-# 4. CI/CD
-
-CI/CD là quy trình tự động hóa kiểm tra, build và deploy code.
-
-CI = Continuous Integration. Mỗi lần push/merge code, hệ thống tự chạy check.
-
-CD = Continuous Delivery/Deployment. Code sau khi qua check được đóng gói và deploy.
-
-## 4.1 Pipeline cơ bản
-
-Một pipeline backend thường gồm:
-
-```text
-Push code
--> Install dependencies
--> Lint
--> Test
--> Build
--> Build Docker image
--> Push image
--> Deploy
-```
-
-Ví dụ với Node.js:
-
-```text
-npm ci
-npm run lint
-npm run test
-npm run build
-docker build
-docker push
-deploy
-```
-
-## 4.2 Cốt lõi cần nhớ
-
-- CI giúp phát hiện lỗi sớm trước khi merge.
-- CD giúp deploy nhất quán, giảm thao tác tay.
-- Pipeline phải fail nhanh nếu code lỗi.
-- Secrets không được hard-code trong repo.
-- Build artifact phải rõ ràng, cùng một artifact nên được dùng qua các môi trường.
-
-## 4.3 Vấn đề thực tế
-
-### Environment khác nhau
-
-Local chạy được nhưng production lỗi vì:
-
-- Node version khác.
-- Env thiếu.
-- Database URL sai.
-- Build command khác.
 
 Cách xử lý:
 
-- Pin version Node.
-- Dùng `.env.example`.
-- Validate env khi app start.
-- Docker hóa môi trường chạy.
+- TTL hợp lý.
+- Delete cache sau write.
+- Event-based invalidation.
+- Versioned key nếu cần.
+- Với data critical, không dùng cache hoặc chỉ cache read model được kiểm soát.
 
-### Migration database
+### 3.6 Cache stampede
 
-Deploy code mới nhưng schema DB chưa update có thể làm app lỗi.
+Cache stampede xảy ra khi một key hot hết hạn, nhiều request cùng miss cache và cùng query DB.
 
-Cách an toàn:
+Ví dụ:
 
-- Migration nên backward compatible.
-- Không xóa cột ngay nếu code cũ còn dùng.
-- Deploy theo nhiều bước khi thay đổi lớn.
-- Backup trước migration nguy hiểm.
+```text
+homepage_feed hết TTL
+1000 request cùng lúc miss cache
+1000 request cùng query DB
+DB spike
+```
 
-### Rollback
+Cách xử lý:
 
-Rollback code không phải lúc nào rollback được DB.
+- TTL jitter: thêm random TTL để key không hết hạn cùng lúc.
+- Lock khi rebuild cache: chỉ một request rebuild, request khác chờ hoặc dùng stale data.
+- Serve stale while revalidate.
+- Pre-warm cache cho key cực hot.
 
-Ví dụ đã migration xóa cột, rollback code cũ sẽ lỗi vì cột không còn.
+### 3.7 Hot key
+
+Hot key là key bị truy cập quá nhiều, ví dụ video viral counter hoặc homepage feed.
+
+Rủi ro:
+
+- Một Redis shard quá tải.
+- Latency tăng.
+- Cache cluster mất cân bằng.
+
+Cách xử lý:
+
+- Local cache ngắn hạn.
+- Chia key thành nhiều shard key.
+- Batch update counter.
+- CDN/edge cache nếu là public content.
+
+### 3.8 Cache penetration và cache avalanche
+
+Cache penetration: request hỏi data không tồn tại, cache miss liên tục, DB bị đánh.
+
+Cách xử lý:
+
+- Cache negative result với TTL ngắn.
+- Bloom filter cho hệ thống rất lớn.
+- Validate input sớm.
+
+Cache avalanche: nhiều key hết hạn cùng lúc hoặc cache cluster down, DB nhận traffic lớn.
+
+Cách xử lý:
+
+- TTL jitter.
+- Preload/warm cache.
+- Rate limit/backpressure.
+- Fallback/degrade.
+
+## 4. Session, token và Redis
+
+### 4.1 Session server-side
+
+Session server-side lưu trạng thái đăng nhập ở server/cache, client giữ session id trong cookie.
+
+Ưu điểm:
+
+- Server revoke session dễ.
+- Không phải đưa nhiều claim vào token.
+- Phù hợp khi cần kiểm soát session tập trung.
+
+Nhược điểm:
+
+- Cần session store như Redis.
+- Redis down có thể ảnh hưởng login/session.
+- Cần scale session store.
+
+### 4.2 JWT stateless
+
+JWT chứa claim và server verify bằng secret/public key, không nhất thiết lookup DB mỗi request.
+
+Ưu điểm:
+
+- Stateless ở API layer.
+- Phù hợp distributed service.
+- Dễ scale API stateless.
+
+Nhược điểm:
+
+- Revoke khó hơn nếu không có denylist/version.
+- Token lộ thì dùng được đến khi hết hạn.
+- Payload lớn làm request nặng hơn.
+
+Thực tế thường dùng:
+
+- Access token ngắn hạn.
+- Refresh token có rotation/revoke.
+- Redis/DB lưu denylist hoặc token version nếu cần revoke.
+
+### 4.3 OTP và temporary token
+
+Redis phù hợp lưu OTP:
+
+```text
+otp:login:user_123 -> 123456 TTL 5 minutes
+```
+
+Cần chú ý:
+
+- TTL ngắn.
+- Rate limit gửi/verify OTP.
+- Không log OTP.
+- Hash OTP nếu security requirement cao.
+- Giới hạn số lần nhập sai.
+
+## 5. Rate limit
+
+### 5.1 Rate limit là gì?
+
+Rate limit giới hạn số request trong một khoảng thời gian để bảo vệ hệ thống khỏi abuse, brute force hoặc traffic spike.
+
+Dùng cho:
+
+- Login.
+- Register.
+- OTP.
+- Password reset.
+- Public API.
+- Expensive endpoint.
+
+### 5.2 Rate limit key
+
+Key có thể theo:
+
+- IP.
+- User id.
+- API key/client id.
+- Email/account.
+- Route/action.
+- Device/session.
+
+Không nên chỉ dùng một key cho mọi trường hợp.
+
+Ví dụ login:
+
+```text
+login_fail:ip:1.2.3.4
+login_fail:email_hash:abc123
+login_fail:user:42
+```
+
+### 5.3 Algorithms
+
+Fixed window:
+
+- Đếm request trong window cố định.
+- Đơn giản.
+- Có thể burst ở biên window.
+
+Sliding window:
+
+- Đếm request trong khoảng thời gian trượt.
+- Chính xác hơn fixed window.
+- Tốn tài nguyên hơn.
+
+Token bucket:
+
+- Bucket có token refill theo thời gian.
+- Request dùng token.
+- Cho phép burst có kiểm soát.
+
+Leaky bucket:
+
+- Request chảy ra với tốc độ ổn định.
+- Làm mượt traffic.
+
+### 5.4 Thiết kế rate limit login
+
+Flow:
+
+```text
+login request
+-> check IP limiter
+-> check account/email limiter
+-> verify credential
+-> nếu fail: increment counters
+-> nếu fail nhiều: delay/captcha/lock tạm thời
+-> nếu success: reset counter phù hợp
+```
+
+Cần chú ý:
+
+- Chỉ limit theo IP không đủ vì NAT/shared office.
+- Chỉ limit theo account có thể bị attacker lock account người khác.
+- Response không nên tiết lộ email tồn tại hay không.
+- Log security event.
+- Có fallback nếu Redis down.
+
+Câu trả lời:
+
+> Với login, em rate limit theo nhiều chiều: IP, account/email và có thể device/session. Sau nhiều lần fail thì tăng delay, captcha hoặc lock tạm thời. Response phải chung chung để không leak account existence. Redis thường dùng để lưu counter TTL.
+
+## 6. Distributed lock
+
+### 6.1 Distributed lock là gì?
+
+Distributed lock là cơ chế để nhiều instance cùng chạy nhưng chỉ một instance được xử lý một resource/critical section tại một thời điểm.
+
+Dùng khi:
+
+- Chỉ một worker rebuild cache hot key.
+- Job scheduled chỉ nên chạy một instance.
+- Xử lý cùng một order/webhook tránh trùng.
+- Critical section ngắn và có thể retry.
+
+### 6.2 Lưu ý khi dùng lock
+
+Lock phải có TTL để tránh dead lock nếu process chết.
+
+Critical section phải ngắn.
+
+Lock release phải đúng owner.
+
+Không nên chỉ dựa vào lock cho consistency quan trọng. DB constraint/idempotency vẫn cần là lớp bảo vệ cuối.
+
+Ví dụ:
+
+```text
+try acquire lock order:123 TTL 30s
+-> success: process order
+-> release lock nếu còn owner
+-> fail: retry later
+```
+
+### 6.3 Khi không nên dùng distributed lock
+
+Không nên dùng lock để che thiết kế dữ liệu sai.
+
+Nếu bài toán có thể giải bằng:
+
+- Unique constraint.
+- Atomic update.
+- Transaction.
+- Idempotency key.
+
+Thì nên ưu tiên các cơ chế database chắc chắn hơn.
+
+## 7. Queue và background job
+
+### 7.1 Queue là gì?
+
+Queue là hàng đợi để tách producer và consumer. Producer đẩy job/message vào queue, consumer xử lý sau.
+
+Dùng queue khi:
+
+- Task chậm không nên block request.
+- Cần retry.
+- Cần absorb traffic spike.
+- Cần xử lý async.
+- Cần fanout sang nhiều worker.
+
+Ví dụ:
+
+- Send email.
+- Push notification.
+- Process uploaded file.
+- Generate report.
+- Sync external service.
+- Resize image/video.
+
+### 7.2 Request sync vs async
+
+Xử lý sync khi:
+
+- User cần kết quả ngay.
+- Task nhanh và ổn định.
+- Failure phải trả ngay cho user.
+
+Xử lý async khi:
+
+- Task lâu.
+- Có thể retry.
+- User chỉ cần job id/status.
+- Task phụ không ảnh hưởng kết quả chính.
+
+Ví dụ import file:
+
+```text
+Client upload file
+-> API tạo import_job
+-> API push job vào queue
+-> API trả jobId
+-> Worker xử lý file
+-> UI poll progress
+```
+
+### 7.3 Retry, backoff và DLQ
+
+Retry dùng cho lỗi tạm thời:
+
+- Network timeout.
+- External service 503.
+- DB deadlock transient.
+
+Không nên retry vô hạn lỗi permanent:
+
+- Email format sai.
+- Data validation fail.
+- Permission denied.
+
+Backoff:
+
+- Retry lần sau chậm hơn lần trước.
+- Thêm jitter để tránh retry storm.
+
+DLQ - Dead Letter Queue:
+
+- Nơi chứa message xử lý thất bại sau số lần retry tối đa.
+- Cần alert/dashboard.
+- Có quy trình reprocess hoặc discard.
+
+### 7.4 Idempotent consumer
+
+Consumer phải idempotent vì message có thể duplicate.
+
+Cách làm:
+
+- Message có `eventId`.
+- Lưu processed event id.
+- Dùng unique constraint.
+- Upsert thay vì insert mù.
+- Check business state trước khi update.
+
+Ví dụ:
+
+```sql
+CREATE TABLE processed_events (
+  event_id TEXT PRIMARY KEY,
+  processed_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+Flow:
+
+```text
+BEGIN
+insert event_id vào processed_events
+nếu duplicate -> bỏ qua
+xử lý side effect
+COMMIT
+```
+
+Câu trả lời:
+
+> Queue thường đảm bảo at-least-once delivery, nên consumer có thể nhận duplicate message. Vì vậy consumer phải idempotent bằng event id, unique constraint, upsert hoặc kiểm tra state trước khi side effect.
+
+## 8. Kafka và event streaming
+
+### 8.1 Kafka là gì?
+
+Kafka là distributed event streaming platform. Kafka lưu event theo topic, chia topic thành partition, consumer đọc event theo offset.
+
+Kafka phù hợp khi:
+
+- Throughput cao.
+- Nhiều consumer cùng đọc một dòng event.
+- Cần event log/audit.
+- Cần xử lý stream dữ liệu.
+- Cần ordering theo key trong partition.
+
+Không nhất thiết cần Kafka khi:
+
+- Chỉ có vài background job đơn giản.
+- Team chưa có kinh nghiệm vận hành.
+- Workload phù hợp với queue đơn giản như SQS/RabbitMQ/BullMQ.
+
+### 8.2 Topic, partition, producer, consumer
+
+Topic là dòng event, ví dụ `order-events`.
+
+Producer ghi event vào topic.
+
+Consumer đọc event từ topic.
+
+Partition là đơn vị scale và ordering.
+
+Consumer group cho phép nhiều consumer chia nhau đọc partition.
+
+Offset là vị trí consumer đã đọc.
+
+### 8.3 Ordering trong Kafka
+
+Kafka đảm bảo thứ tự trong cùng một partition, không đảm bảo global ordering trên toàn topic.
+
+Nếu muốn event của cùng một order đúng thứ tự:
+
+```text
+key = order_id
+```
+
+Các event cùng `order_id` sẽ vào cùng partition.
+
+Trade-off:
+
+- Key quá hot làm một partition nóng.
+- Tăng partition giúp throughput nhưng không có global order.
+
+### 8.4 Kafka duplicate và exactly-once
+
+Trong thực tế, vẫn nên thiết kế consumer idempotent.
+
+Lý do:
+
+- Producer retry có thể duplicate.
+- Consumer xử lý xong nhưng commit offset fail.
+- Rebalance consumer group có thể xử lý lại.
+
+Câu trả lời:
+
+> Dù Kafka có nhiều cơ chế delivery guarantee, trong thiết kế backend em vẫn coi message có thể duplicate. Consumer phải idempotent, dùng event id/unique constraint/upsert để retry an toàn.
+
+### 8.5 Kafka vs RabbitMQ vs queue đơn giản
+
+Kafka:
+
+- Mạnh về event streaming, throughput cao, nhiều consumer, retention event log.
+- Vận hành phức tạp hơn.
+
+RabbitMQ:
+
+- Mạnh về message routing, work queue, ack/retry.
+- Phù hợp job/message queue truyền thống.
+
+SQS/BullMQ/queue đơn giản:
+
+- Dễ dùng hơn cho background job.
+- Ít phù hợp hơn nếu cần event streaming phức tạp.
+
+Không nên chọn Kafka chỉ vì "hệ thống lớn". Chọn theo workload.
+
+## 9. Transactional Outbox
+
+### 9.1 Vấn đề outbox giải quyết
+
+Vấn đề:
+
+```text
+Service update DB thành công
+Service publish event thất bại
+```
+
+Kết quả: business data đã thay đổi nhưng service khác không nhận được event.
+
+Ví dụ:
+
+- Order đã tạo.
+- Event `OrderCreated` không publish.
+- Notification/search/analytics không biết order mới.
+
+### 9.2 Outbox pattern là gì?
+
+Outbox pattern ghi business data và event vào cùng DB transaction.
+
+Flow:
+
+```text
+BEGIN
+insert order
+insert outbox_events(OrderCreated)
+COMMIT
+
+Outbox worker đọc event pending
+-> publish vào Kafka/queue
+-> mark published
+```
+
+Ví dụ table:
+
+```sql
+CREATE TABLE outbox_events (
+  id UUID PRIMARY KEY,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  published_at TIMESTAMP
+);
+```
+
+Ưu điểm:
+
+- Không mất event khi DB commit thành công.
+- Event publish có thể retry.
+- Tách transaction DB khỏi broker availability.
+
+Nhược điểm:
+
+- Thêm table/worker.
+- Event có thể duplicate nếu publish xong nhưng mark published fail.
+- Consumer vẫn phải idempotent.
+
+Câu trả lời:
+
+> Outbox đảm bảo business data và ý định publish event được commit cùng nhau. Worker publish event sau. Nếu publish duplicate, consumer idempotent xử lý. Pattern này tránh lỗi DB commit xong nhưng publish event fail.
+
+## 10. Backend performance
+
+### 10.1 Cách debug API chậm
+
+Không tối ưu theo cảm tính. Quy trình:
+
+1. Xác định endpoint nào chậm.
+2. Nhìn p95/p99 latency, error rate, time window.
+3. Dùng tracing/log để tách thời gian: app, DB, cache, external API.
+4. Kiểm tra slow query và N+1.
+5. Kiểm tra payload size và serialization.
+6. Kiểm tra event loop block/CPU.
+7. Kiểm tra connection pool.
+8. Kiểm tra queue lag nếu flow async.
+9. Fix bottleneck thật.
+10. Đo lại sau khi fix.
+
+### 10.2 Nguyên nhân thường gặp
+
+- Query thiếu index.
+- N+1 query.
+- External API chậm.
+- Gọi dependency tuần tự dù độc lập.
+- JSON payload quá lớn.
+- CPU-bound task block event loop.
+- Cache hit rate thấp.
+- DB connection pool hết.
+- Lock contention.
+- Queue lag.
+- Log quá nhiều hoặc log sync.
+
+### 10.3 Cách tối ưu
+
+- Tối ưu query/index.
+- Batch query.
+- Dùng `Promise.all` có kiểm soát cho task độc lập.
+- Cache data read-heavy.
+- Đưa task lâu vào queue.
+- Stream file/payload lớn.
+- Cursor pagination.
+- Timeout/retry/circuit breaker.
+- Giới hạn concurrency.
+- Scale ngang stateless service nếu bottleneck là app CPU/RPS.
+
+### 10.4 Timeout, retry và circuit breaker
+
+Timeout:
+
+- Mọi external call nên có timeout.
+- Không để request treo vô hạn.
+
+Retry:
+
+- Chỉ retry lỗi tạm thời.
+- Dùng exponential backoff và jitter.
+- Không retry vô điều kiện request không idempotent.
+
+Circuit breaker:
+
+- Nếu dependency fail liên tục, tạm dừng gọi.
+- Fail fast hoặc fallback.
+- Tránh cascade failure.
+
+Câu trả lời:
+
+> Với external service, em đặt timeout rõ ràng. Retry chỉ dùng cho lỗi tạm thời và phải có backoff. Với request có side effect thì cần idempotency trước khi retry. Circuit breaker giúp fail fast khi dependency đang lỗi, tránh kéo sập toàn bộ service.
+
+### 10.5 Backpressure
+
+Backpressure là cơ chế làm chậm producer khi consumer/downstream xử lý không kịp.
+
+Ví dụ:
+
+- API nhận request nhanh hơn DB ghi.
+- Worker đọc queue nhanh hơn external service xử lý.
+- Stream đọc file nhanh hơn DB insert batch.
+
+Cách xử lý:
+
+- Giới hạn concurrency.
+- Queue buffer.
+- Rate limit.
+- Stream backpressure.
+- Circuit breaker.
+- Trả `429` hoặc degrade khi quá tải.
+
+## 11. Security backend
+
+### 11.1 Input validation
+
+Mọi input từ client/external system đều không đáng tin.
+
+Cần validate:
+
+- Body.
+- Query.
+- Params.
+- Headers quan trọng.
+- File upload.
+- Webhook payload.
+
+Không chỉ validate format, còn phải validate business rule ở service layer.
+
+### 11.2 Output serialization
+
+Không trả entity nội bộ trực tiếp nếu có field nhạy cảm.
+
+Ví dụ không được leak:
+
+- `passwordHash`
+- `refreshTokenHash`
+- internal flags
+- secret config
+- PII không cần thiết
+
+### 11.3 Auth, CORS, CSRF
+
+Cần nắm:
+
+- Auth xác định user là ai.
+- Authz xác định user được làm gì.
+- CORS không phải cơ chế auth, chỉ là browser policy.
+- Nếu dùng cookie-based auth, cần quan tâm CSRF.
+- Nếu dùng token trong browser, cần quan tâm XSS.
+
+### 11.4 File upload security
 
 Cần:
 
-- Có version image cũ.
-- Có chiến lược migration an toàn.
-- Có monitoring sau deploy.
+- Giới hạn size.
+- Kiểm tra MIME/type và extension.
+- Không tin file name từ client.
+- Scan virus nếu domain yêu cầu.
+- Lưu vào object storage, không lưu bừa vào server disk.
+- Không cho execute uploaded file.
+- Dùng presigned URL nếu phù hợp.
 
-### Secrets
+## 12. Câu hỏi phỏng vấn hay gặp
 
-Không commit:
+### Khi nào dùng queue thay vì xử lý trực tiếp trong request?
 
-- API key.
-- DB password.
-- JWT secret.
-- Cloud credentials.
+Dùng queue khi task lâu, không cần trả kết quả ngay, cần retry, cần absorb traffic spike hoặc task phụ như email/notification/report/import file. Request chỉ tạo job và trả `jobId`, worker xử lý async và cập nhật trạng thái.
 
-Dùng:
+### Làm sao tránh duplicate message?
 
-- GitHub Actions Secrets.
-- Secret manager.
-- Env của platform deploy.
+Thiết kế consumer idempotent. Message có `eventId`, lưu processed event id hoặc dùng unique constraint/upsert. Không giả định queue/Kafka chỉ gửi đúng một lần.
 
----
+### Redis cache có rủi ro gì?
 
-# 5. Docker
+Rủi ro gồm stale data, cache stampede, hot key, memory eviction, Redis down và cache avalanche. Cần TTL, invalidation, TTL jitter, lock khi rebuild cache, metric hit rate và fallback/degrade strategy.
 
-Docker giúp đóng gói app cùng môi trường chạy vào image. Khi chạy image sẽ tạo container.
+### Rate limit login nên thiết kế thế nào?
 
-## 5.1 Image và Container
+Rate limit theo nhiều chiều: IP, email/account, user/device nếu có. Sau nhiều lần fail thì delay/captcha/lock tạm thời. Response không tiết lộ account tồn tại hay không. Redis lưu counter TTL, có logging security event và fallback khi Redis lỗi.
 
-Image là bản đóng gói bất biến.
+### Transactional outbox giải quyết vấn đề gì?
 
-Container là process chạy từ image.
+Outbox giải quyết lỗi DB commit thành công nhưng publish event thất bại. Ghi business data và outbox event trong cùng transaction, worker publish sau. Consumer vẫn phải idempotent vì event có thể duplicate.
 
-Ví dụ:
+### Debug API chậm như thế nào?
 
-```text
-Image: node-api:1.0
-Container: node-api đang chạy port 3000
-```
-
-## 5.2 Dockerfile
-
-Dockerfile mô tả cách build image.
-
-Ví dụ Node.js đơn giản:
-
-```dockerfile
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-CMD ["npm", "run", "start:prod"]
-```
-
-### Cốt lõi cần nhớ
-
-- `FROM`: image nền.
-- `WORKDIR`: thư mục làm việc.
-- `COPY`: copy file vào image.
-- `RUN`: chạy lệnh lúc build image.
-- `CMD`: lệnh chạy khi container start.
-- `.dockerignore`: loại file không cần copy vào image.
-
-## 5.3 Docker Compose
-
-Compose dùng để chạy nhiều service cùng nhau.
-
-Ví dụ:
-
-```yaml
-services:
-  api:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/app
-    depends_on:
-      - db
-
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - db_data:/var/lib/postgresql/data
-
-volumes:
-  db_data:
-```
-
-Trong compose network, service `api` gọi database qua hostname `db`, không phải `localhost`.
-
-## 5.4 Volume
-
-Container có thể bị xóa bất kỳ lúc nào. Nếu dữ liệu quan trọng nằm trong container filesystem, có thể mất.
-
-Volume dùng để lưu dữ liệu bền hơn.
-
-Ví dụ PostgreSQL cần volume:
-
-```yaml
-volumes:
-  - db_data:/var/lib/postgresql/data
-```
-
-## 5.5 Vấn đề thực tế
-
-### Image quá nặng
-
-Nguyên nhân:
-
-- Copy cả `node_modules`.
-- Không dùng `.dockerignore`.
-- Dùng image nền quá lớn.
-- Không multi-stage build.
-
-Cách xử lý:
-
-- Dùng `node:alpine` hoặc slim nếu phù hợp.
-- Dùng `.dockerignore`.
-- Multi-stage build.
-- Chỉ copy file cần thiết.
-
-### Container không sẵn sàng dù đã start
-
-`depends_on` chỉ đảm bảo container db đã start, không đảm bảo database đã ready.
-
-Cần:
-
-- Healthcheck.
-- Retry connection trong app.
-- Script wait-for nếu cần.
-
-### Dùng localhost sai
-
-Bên trong container, `localhost` là chính container đó.
-
-Nếu API container cần gọi DB container, dùng service name:
-
-```text
-postgres://user:pass@db:5432/app
-```
-
-Không dùng:
-
-```text
-postgres://user:pass@localhost:5432/app
-```
-
-### Env khác nhau
-
-Không bake secret vào image.
-
-Sai:
-
-```dockerfile
-ENV DATABASE_URL=production-secret-url
-```
-
-Đúng:
-
-- Truyền env khi chạy container.
-- Dùng secret manager/platform env.
-
----
-
-# 6. Kafka
-
-Kafka là distributed event streaming platform. Hiểu đơn giản: Kafka là hệ thống log/message broker rất mạnh, dùng để truyền event giữa các service.
-
-## 6.1 Khi nào dùng Kafka?
-
-Dùng Kafka khi muốn tách các service bằng event.
-
-Ví dụ user upload video:
-
-```text
-Video Service tạo video
--> publish event video.created
--> Notification Service gửi thông báo
--> Analytics Service ghi thống kê
--> Recommendation Service cập nhật đề xuất
-```
-
-Video Service không cần gọi trực tiếp từng service.
-
-## 6.2 Thành phần cốt lõi
-
-### Topic
-
-Topic là nơi chứa event cùng loại.
-
-Ví dụ:
-
-```text
-video.created
-user.followed
-payment.completed
-```
-
-### Producer
-
-Service gửi message vào Kafka.
-
-Ví dụ:
-
-```text
-Video Service -> Kafka topic video.created
-```
-
-### Consumer
-
-Service đọc message từ Kafka.
-
-Ví dụ:
-
-```text
-Notification Service đọc topic video.created
-```
-
-### Partition
-
-Topic được chia thành nhiều partition để scale.
-
-Mỗi message trong một partition có thứ tự.
-
-Quan trọng:
-
-- Kafka chỉ đảm bảo ordering trong cùng một partition.
-- Không đảm bảo ordering toàn topic nếu topic có nhiều partition.
-
-### Consumer Group
-
-Nhiều consumer cùng group sẽ chia nhau đọc partitions.
-
-Ví dụ topic có 3 partition, consumer group có 3 consumer:
-
-```text
-consumer-1 đọc partition 0
-consumer-2 đọc partition 1
-consumer-3 đọc partition 2
-```
-
-Nếu có 4 consumer nhưng chỉ 3 partition, 1 consumer sẽ rảnh.
-
-### Offset
-
-Offset là vị trí message đã đọc trong partition.
-
-Consumer commit offset để Kafka biết đã xử lý tới đâu.
-
-## 6.3 Cốt lõi cần nhớ
-
-- Kafka lưu message theo log append-only.
-- Message trong partition có thứ tự.
-- Consumer tự quản lý tiến độ bằng offset.
-- Scale bằng partition.
-- Một topic có thể có nhiều consumer group độc lập.
-
-Ví dụ:
-
-```text
-topic: video.created
-
-consumer group notification-service đọc để gửi notification
-consumer group analytics-service đọc để ghi analytics
-consumer group search-service đọc để index search
-```
-
-Mỗi group có offset riêng.
-
-## 6.4 Duplicate Message
-
-Kafka có thể gửi lại message trong một số trường hợp.
-
-Ví dụ consumer xử lý xong nhưng chưa kịp commit offset thì chết. Khi restart, nó đọc lại message cũ.
-
-Vì vậy consumer nên idempotent.
-
-Idempotent nghĩa là xử lý lại cùng một message nhiều lần vẫn không gây sai dữ liệu.
-
-Ví dụ gửi notification:
-
-Sai:
-
-```text
-Cứ đọc event là insert notification mới.
-```
-
-Nếu duplicate, user nhận 2 notification.
-
-Tốt hơn:
-
-```text
-Dùng event_id unique.
-Nếu event_id đã xử lý thì bỏ qua.
-```
-
-## 6.5 Ordering
-
-Kafka chỉ giữ thứ tự trong cùng partition.
-
-Nếu muốn event của cùng một user theo đúng thứ tự, dùng key là `user_id`.
-
-Ví dụ:
-
-```text
-key = user_id
-```
-
-Kafka sẽ đưa các event cùng key vào cùng partition.
-
-Vấn đề:
-
-- Nếu key phân bố không đều, một partition có thể quá tải.
-- Nếu cần ordering toàn hệ thống, Kafka không phải lúc nào phù hợp.
-
-## 6.6 Retry và Dead Letter Queue
-
-Nếu consumer xử lý message lỗi, có vài cách:
-
-- Retry ngay.
-- Retry sau một khoảng thời gian.
-- Đẩy vào dead letter queue nếu lỗi mãi.
-
-Ví dụ:
-
-```text
-video.created
--> xử lý fail
--> retry video.created.retry
--> vẫn fail
--> video.created.dlq
-```
-
-Dead letter queue giúp giữ message lỗi để debug sau, không làm kẹt toàn bộ consumer.
-
-## 6.7 Consumer Lag
-
-Consumer lag là khoảng cách giữa message mới nhất và message consumer đã xử lý.
-
-Lag cao nghĩa là consumer xử lý không kịp.
-
-Nguyên nhân:
-
-- Consumer xử lý chậm.
-- Partition quá ít.
-- Message tăng đột biến.
-- Downstream service chậm, ví dụ DB chậm.
-
-Cách xử lý:
-
-- Tối ưu consumer.
-- Tăng số partition.
-- Tăng số consumer trong group.
-- Batch xử lý.
-- Tối ưu DB/API downstream.
-
----
-
-# 7. Tóm tắt học nhanh
-
-## Database
-
-- Index giúp đọc nhanh nhưng ghi chậm hơn.
-- B-tree mạnh với `=`, range, sort.
-- Compound index phải chú ý thứ tự cột và leftmost prefix.
-- Dùng `EXPLAIN ANALYZE` để kiểm tra query thật sự chạy thế nào.
-- Transaction bảo vệ dữ liệu khi nhiều thao tác phải thành công cùng nhau.
-- Isolation level càng cao càng an toàn nhưng càng dễ conflict/chậm.
-- Relational DB phù hợp dữ liệu quan hệ, transaction, SQL phức tạp.
-- Non-relational DB phù hợp pattern đặc thù, scale ngang, schema linh hoạt.
-
-## Node.js
-
-- Node.js không mạnh với CPU-heavy task trên main thread.
-- Event loop giúp xử lý async I/O.
-- 6 phase: timers, pending callbacks, idle/prepare, poll, check, close callbacks.
-- Promise chạy qua microtask queue.
-- `process.nextTick` ưu tiên cao hơn Promise microtask.
-- Dùng `Promise.all` cho các task độc lập.
-
-## Redis
-
-- Redis rất nhanh vì chạy chủ yếu trong RAM.
-- Use case chính: cache, session, rate limit, lock, pub/sub, counter.
-- Luôn nghĩ về TTL, invalidation, memory, Redis down.
-- Dùng atomic command như `INCR`, `SET NX EX`.
-
-## CI/CD
-
-- CI kiểm tra code tự động.
-- CD deploy tự động hoặc bán tự động.
-- Pipeline cơ bản: install, lint, test, build, docker build, deploy.
-- Cẩn thận secrets, migration, rollback, env khác nhau.
-
-## Docker
-
-- Image là bản đóng gói, container là instance đang chạy.
-- Dockerfile build image.
-- Compose chạy nhiều service.
-- Volume giữ dữ liệu bền hơn container.
-- Trong container, `localhost` là chính container đó.
-- Production cần healthcheck, env rõ ràng, image gọn.
-
-## Kafka
-
-- Kafka dùng để truyền event giữa service.
-- Topic chứa message, partition giúp scale, consumer group chia tải.
-- Ordering chỉ đảm bảo trong cùng partition.
-- Consumer cần idempotent vì message có thể bị xử lý lại.
-- Theo dõi consumer lag để biết hệ thống có xử lý kịp không.
-
----
-
-# 8. Cách học nhanh vào trọng tâm
-
-Nếu chỉ có ít thời gian, học theo thứ tự này:
-
-1. Database index, compound index, EXPLAIN.
-2. Transaction, isolation, race condition.
-3. Node.js event loop, Promise, async/await.
-4. Redis cache, TTL, invalidation, rate limit.
-5. Docker image/container/compose/volume/network.
-6. CI/CD pipeline, env, secret, migration, rollback.
-7. Kafka topic/partition/consumer group/offset, duplicate, ordering, retry.
-
-Mỗi phần nên tự trả lời được 3 câu:
-
-1. Nó giải quyết vấn đề gì?
-2. Nó hoạt động cốt lõi thế nào?
-3. Khi deploy thật thì dễ lỗi ở đâu?
+Đầu tiên đo p95/p99, error rate và endpoint bị ảnh hưởng. Dùng tracing/log để tách latency ở app, DB, cache, external API. Kiểm tra slow query, N+1, payload lớn, event loop block, connection pool và queue lag. Fix bottleneck thật rồi đo lại.

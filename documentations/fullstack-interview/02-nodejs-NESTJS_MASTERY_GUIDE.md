@@ -1,238 +1,971 @@
-# Hướng Dẫn Ôn Phỏng Vấn NestJS & Node.js
+# Hướng Dẫn Ôn Phỏng Vấn Node.js, TypeScript và NestJS
 
-Tài liệu này tập trung vào kiến thức thường gặp trong phỏng vấn backend NestJS/Node.js. Bản cũ đã có các ý chính, nhưng bị trùng nhiều giữa phần kiến thức và phần hỏi đáp, thiếu nền tảng Node.js, thiếu các câu hỏi thực tế về production, transaction, performance, queue, logging, bảo mật và testing.
+File này là tài liệu canonical cho Node.js, TypeScript backend và NestJS. Mục tiêu là đọc để hiểu và nói lại được trong phỏng vấn, không chỉ là checklist.
 
-## 1. Mức Độ Cần Nắm
+Các phần liên quan nhưng không đi sâu ở đây:
+
+- Database chuyên sâu: `05-kiến thức master database.md`
+- Cache, Redis, queue, Kafka, rate limit: `06-backend-core-knowledge.md`
+- Docker, CI/CD, monitoring, cloud: `04-kiến thức-database-devops.md`
+
+## 1. Mức độ cần nắm
 
 ### Bắt buộc phải chắc
 
-- Node.js event loop, non-blocking I/O, Promise, async/await, error handling.
-- Cấu trúc NestJS: module, controller, provider, service, dependency injection.
-- Request lifecycle: middleware, guard, interceptor, pipe, controller, service, exception filter.
-- DTO, validation, transform dữ liệu, exception handling.
-- Authentication/Authorization: JWT, Passport strategy, guard, role/permission.
-- Database: repository/service boundary, transaction, migration, connection pooling.
-- Testing: unit test service/controller, e2e test API, mock provider.
+- Node.js chạy JavaScript như thế nào: call stack, event loop, libuv, non-blocking I/O.
+- Khi nào Node.js nhanh, khi nào Node.js bị chậm.
+- Promise, async/await, microtask, macrotask.
+- Stream và backpressure khi xử lý file/request lớn.
+- TypeScript: `unknown` vs `any`, `interface` vs `type`, generic, utility type.
+- NestJS: module, controller, provider/service, dependency injection.
+- Request lifecycle: middleware, guard, interceptor, pipe, exception filter.
+- DTO, validation, serialization.
+- Authentication và authorization: JWT, refresh token, RBAC, permission, ownership.
+- Testing: unit test, integration/E2E test, mock provider.
+- Production readiness: error format, logging, timeout, graceful shutdown, health check.
 
-### Nên biết để trả lời tốt hơn
+### Nên biết để trả lời senior hơn
 
-- Custom provider: `useClass`, `useValue`, `useFactory`, `useExisting`.
-- Injection scope: singleton, request, transient; hiểu chi phí của request scope.
-- Dynamic module, global module, circular dependency.
-- Caching, rate limiting, queue/background job, logging, health check.
-- Microservices trong NestJS: TCP, Redis, RabbitMQ, Kafka, gRPC; `send()` vs `emit()`.
-- Production readiness: config, secrets, graceful shutdown, observability, retry, timeout.
+- Worker thread và cách xử lý CPU-bound workload.
+- Injection scope: singleton, request-scoped, transient.
+- Dynamic module và custom provider.
+- Circular dependency và cách tránh.
+- Transaction boundary trong service layer.
+- Outbox/idempotency ở mức tích hợp với business flow.
+- Fastify adapter vs Express adapter.
+- OpenAPI/Swagger, API versioning, backward compatibility.
 
-### Có thể học sau nếu thời gian ít
+## 2. Node.js core
 
-- GraphQL, WebSocket, CQRS, event sourcing.
-- Multi-tenant nâng cao.
-- Custom transport strategy.
-- Deep internals của Nest container.
+### 2.1 Node.js là gì?
 
-## 2. Node.js Nền Tảng
+Node.js là runtime cho phép chạy JavaScript ở phía server. Node.js dùng V8 để thực thi JavaScript, và dùng libuv để xử lý event loop, I/O bất đồng bộ, timer, thread pool cho một số tác vụ hệ thống.
 
-### Event loop
+Điểm quan trọng khi phỏng vấn:
 
-Node.js chạy JavaScript chủ yếu trên một main thread, nhưng I/O bất đồng bộ được giao cho hệ điều hành hoặc libuv thread pool khi cần. Event loop nhận callback/promise continuation khi tác vụ hoàn tất.
+- JavaScript trong Node.js chạy trên main thread.
+- I/O như network, database driver, filesystem async có thể không block main thread.
+- Node.js rất hợp với I/O-bound workload: API server, gateway, real-time, streaming, BFF.
+- Node.js không tự động tốt cho CPU-bound workload: xử lý ảnh/video, mã hóa nặng, vòng lặp tính toán lớn.
 
-Thứ tự cần nhớ ở mức phỏng vấn:
+Câu trả lời ngắn:
 
-1. Code đồng bộ chạy trước.
-2. Microtask queue chạy sau call stack hiện tại, gồm `Promise.then/catch/finally` và `queueMicrotask`.
-3. `process.nextTick()` có độ ưu tiên rất cao trong Node.js, dùng quá nhiều có thể làm đói event loop.
-4. Macrotask/phases gồm timers, pending callbacks, poll, check, close callbacks.
-5. `setTimeout(fn, 0)` và `setImmediate(fn)` không luôn có thứ tự tuyệt đối nếu gọi từ top-level; trong I/O callback thì `setImmediate` thường chạy trước timer.
+> Node.js phù hợp với backend có nhiều I/O vì nó dùng event loop và non-blocking I/O. Main thread chạy JavaScript, còn nhiều tác vụ I/O được giao cho OS/libuv. Nhưng nếu mình đặt CPU-heavy task trong request handler thì event loop vẫn bị block và toàn bộ API có thể chậm.
 
-Ví dụ trả lời ngắn:
+### 2.2 Event loop
+
+Event loop là cơ chế giúp Node.js xử lý các callback/tác vụ bất đồng bộ theo vòng lặp. Khi code đồng bộ chạy xong, event loop lấy các callback đã sẵn sàng từ các queue để đưa lên call stack thực thi.
+
+Bản chất cần hiểu:
+
+```text
+Call Stack
+  -> chạy code JavaScript đồng bộ
+Async APIs / libuv / OS
+  -> xử lý timer, network, file I/O...
+Queues
+  -> callback/promise continuation chờ được chạy
+Event Loop
+  -> đưa callback phù hợp vào call stack
+```
+
+Ví dụ:
 
 ```ts
-console.log("A");
+console.log("start");
 
-setTimeout(() => console.log("B"), 0);
-setImmediate(() => console.log("C"));
+setTimeout(() => console.log("timeout"), 0);
 
-Promise.resolve().then(() => console.log("D"));
-process.nextTick(() => console.log("E"));
+Promise.resolve().then(() => console.log("promise"));
 
-console.log("F");
+console.log("end");
 ```
 
-Kết quả thường gặp: `A F E D ...`. Phần `B/C` có thể phụ thuộc ngữ cảnh, nên khi phỏng vấn nên giải thích theo queue/phases thay vì học thuộc cứng.
+Thường output:
 
-### Blocking vs non-blocking
-
-- Blocking: xử lý CPU nặng, vòng lặp lớn, sync filesystem, JSON parse/stringify payload quá lớn.
-- Non-blocking: I/O qua callback/promise, database/network call async.
-- CPU-bound task nên đưa sang worker thread, queue worker riêng, hoặc service riêng.
-
-### Stream và backpressure
-
-- Stream dùng để xử lý dữ liệu lớn theo từng chunk thay vì load toàn bộ vào RAM.
-- Backpressure xảy ra khi producer ghi nhanh hơn consumer đọc. Trong Node.js nên dùng `pipe()`/`pipeline()` để xử lý backpressure và lỗi tốt hơn.
-- Case phỏng vấn: upload/download file lớn, export CSV, proxy file từ S3.
-
-### Error handling trong Node/Nest
-
-- Luôn `await` promise hoặc return promise để lỗi không bị trôi.
-- Dùng `try/catch` ở boundary khi cần map lỗi domain sang HTTP exception.
-- Với Nest, ưu tiên ném `BadRequestException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`, `ConflictException`, hoặc exception domain rồi để filter map ra response.
-- Không expose stack trace, SQL error, secret, token trong response production.
-
-## 3. Kiến Trúc NestJS Cốt Lõi
-
-### Module
-
-`@Module()` là đơn vị đóng gói feature. Module khai báo:
-
-- `imports`: module khác mà module hiện tại cần dùng.
-- `controllers`: HTTP entry points.
-- `providers`: service, repository, helper, factory.
-- `exports`: provider public cho module khác import.
-
-Gợi ý tổ chức dự án:
-
-```txt
-src/
-  app.module.ts
-  common/
-    filters/
-    guards/
-    interceptors/
-    pipes/
-  config/
-  database/
-  modules/
-    auth/
-    users/
-    orders/
+```text
+start
+end
+promise
+timeout
 ```
 
-Tránh biến `SharedModule` thành nơi chứa mọi thứ. Service thuộc domain nào nên ở module domain đó, chỉ export thứ thật sự cần dùng ngoài module.
+Lý do:
 
-### Controller
+- `console.log("start")` và `console.log("end")` là code đồng bộ.
+- Promise callback nằm trong microtask queue nên chạy sau code sync nhưng trước timer callback.
+- `setTimeout` là timer callback, chạy ở phase timer khi event loop đến lượt.
 
-Controller chỉ nên làm việc ở tầng HTTP:
+Điểm phỏng vấn hay hỏi:
 
-- Định tuyến endpoint.
-- Nhận `@Body()`, `@Param()`, `@Query()`, `@Headers()`.
-- Gọi service.
-- Trả response DTO hoặc object.
+- Event loop không biến JavaScript thành multi-thread.
+- Event loop giúp main thread không đứng chờ I/O.
+- Nếu main thread bị block bởi CPU task, event loop không có cơ hội xử lý callback khác.
 
-Không nên để business logic, query phức tạp hoặc transaction orchestration quá nhiều trong controller.
+### 2.3 Các phase quan trọng của event loop
 
-### Provider và Service
+Không cần học thuộc quá máy móc, nhưng nên hiểu các nhóm chính:
 
-Provider là class/value/factory được Nest IoC container quản lý. Service thường chứa business logic. Repository hoặc Prisma/TypeORM service chứa data access.
+1. Timers: chạy callback của `setTimeout`, `setInterval`.
+2. Pending callbacks: xử lý một số callback hệ thống.
+3. Poll: nhận I/O callbacks, chờ I/O mới.
+4. Check: chạy `setImmediate`.
+5. Close callbacks: callback khi socket/handle đóng.
+6. Microtask queue: Promise callbacks và `process.nextTick`, chạy giữa các phase.
 
-Ví dụ boundary tốt:
+Ví dụ:
 
-- Controller: `POST /orders`.
-- Service: kiểm tra user, tính tiền, tạo order, publish event.
-- Repository/ORM: đọc/ghi database.
+```ts
+setTimeout(() => console.log("timeout"), 0);
+setImmediate(() => console.log("immediate"));
+Promise.resolve().then(() => console.log("promise"));
+process.nextTick(() => console.log("nextTick"));
+```
 
-### Dependency Injection
+Cần nói được:
 
-Nest dùng IoC container để tạo dependency graph và inject provider qua constructor.
+- `process.nextTick` thường chạy trước Promise microtask.
+- Promise microtask chạy trước timer/check callback.
+- Thứ tự giữa `setTimeout(..., 0)` và `setImmediate` có thể phụ thuộc context.
+- Trong I/O callback, `setImmediate` thường chạy trước `setTimeout(..., 0)`.
+
+### 2.4 Blocking vs non-blocking
+
+Blocking là khi một tác vụ giữ main thread hoặc tài nguyên quan trọng quá lâu, làm các request khác phải chờ.
+
+Ví dụ blocking trong Node.js:
+
+```ts
+app.get("/report", (req, res) => {
+  const result = heavyCalculation(); // CPU-heavy, block event loop
+  res.json(result);
+});
+```
+
+Ví dụ non-blocking I/O:
+
+```ts
+app.get("/users/:id", async (req, res) => {
+  const user = await userRepository.findById(req.params.id);
+  res.json(user);
+});
+```
+
+Các nguồn gây block phổ biến:
+
+- Vòng lặp CPU-heavy.
+- `fs.readFileSync`, crypto/compression sync trong request path.
+- Parse/stringify JSON payload quá lớn.
+- Xử lý file lớn bằng cách load toàn bộ vào memory.
+- Gọi external service không timeout làm request treo lâu.
+
+Cách xử lý:
+
+- Dùng async I/O.
+- Dùng stream cho file lớn.
+- Đưa tác vụ lâu vào queue/background worker.
+- Dùng worker thread/process riêng cho CPU-heavy task.
+- Giới hạn payload size, timeout, concurrency.
+
+### 2.5 Promise, async/await
+
+Promise đại diện cho kết quả của một tác vụ bất đồng bộ có thể thành công hoặc thất bại trong tương lai.
+
+`async/await` là cú pháp giúp viết Promise dễ đọc hơn, nhưng không làm code bất đồng bộ thành đồng bộ thật sự.
+
+Ví dụ:
+
+```ts
+async function getUserProfile(userId: string) {
+  const user = await userRepository.findById(userId);
+  const profile = await profileRepository.findByUserId(user.id);
+  return { user, profile };
+}
+```
+
+Vấn đề cần chú ý:
+
+- Nếu task độc lập mà `await` tuần tự, latency bị cộng dồn.
+- Nếu dùng `Promise.all` quá nhiều task cùng lúc, có thể làm quá tải dependency.
+- Promise bị reject mà không catch có thể tạo unhandled rejection.
+
+Khi nên dùng `Promise.all`:
+
+```ts
+const [profile, orders, unreadCount] = await Promise.all([
+  profileService.getProfile(userId),
+  orderService.getRecentOrders(userId),
+  notificationService.getUnreadCount(userId),
+]);
+```
+
+Khi không nên:
+
+- Task sau cần kết quả task trước.
+- Gọi hàng nghìn external requests cùng lúc.
+- Dependency có rate limit hoặc connection pool nhỏ.
+
+Nếu có nhiều task, nên dùng concurrency limit:
+
+```ts
+// Ý tưởng: chỉ chạy 5 task cùng lúc thay vì chạy tất cả.
+```
+
+Câu trả lời phỏng vấn:
+
+> `async/await` chỉ là syntax trên Promise. Khi gặp `await`, function tạm nhường quyền thực thi, phần sau `await` được đưa vào microtask khi Promise resolve. Nếu nhiều thao tác độc lập, em dùng `Promise.all`, nhưng với số lượng lớn phải giới hạn concurrency để không làm quá tải DB hoặc external service.
+
+### 2.6 Stream và backpressure
+
+Stream là cách xử lý dữ liệu theo từng phần nhỏ thay vì load toàn bộ dữ liệu vào memory.
+
+Phù hợp khi:
+
+- Upload/download file lớn.
+- Đọc CSV/Excel/JSONL lớn.
+- Proxy response lớn.
+- Xử lý log/data pipeline.
+
+Ví dụ sai:
+
+```ts
+const content = await fs.promises.readFile("big-file.csv", "utf8");
+const rows = content.split("\n");
+```
+
+Vấn đề:
+
+- File 1GB có thể làm memory tăng mạnh.
+- Request có thể timeout.
+- GC pressure cao.
+
+Ví dụ đúng hơn:
+
+```ts
+import { pipeline } from "node:stream/promises";
+import { createReadStream } from "node:fs";
+
+await pipeline(
+  createReadStream("big-file.csv"),
+  parseCsvStream(),
+  validateRowsStream(),
+  saveRowsInBatchStream(),
+);
+```
+
+Backpressure là cơ chế giúp bên đọc hoặc ghi điều tiết tốc độ. Nếu bên ghi DB chậm, stream đọc file phải chậm lại, tránh đẩy dữ liệu vào memory quá nhanh.
+
+Câu trả lời phỏng vấn:
+
+> Với file lớn, em dùng stream pipeline để đọc và xử lý theo chunk/batch. Backpressure giúp pipeline không đọc nhanh hơn khả năng xử lý của downstream như DB hoặc network. Nếu bỏ qua backpressure và push dữ liệu liên tục, memory có thể tăng mạnh và service crash.
+
+### 2.7 Worker thread và CPU-bound workload
+
+Node.js mạnh ở I/O-bound, nhưng CPU-bound task sẽ block event loop nếu chạy trực tiếp trên main thread.
+
+CPU-bound task thường gặp:
+
+- Resize/compress ảnh.
+- Encode/transcode video.
+- Hash/mã hóa nặng.
+- Parse file cực lớn với logic phức tạp.
+- Generate report lớn.
+- Tính toán thuật toán nặng.
+
+Cách xử lý:
+
+- Worker thread cho CPU task cần chạy trong cùng app/runtime.
+- Child process hoặc service riêng nếu muốn isolate tốt hơn.
+- Queue/background worker nếu task không cần trả kết quả ngay.
+- Dùng external service chuyên dụng cho video/image processing.
+
+Ưu điểm worker thread:
+
+- Không block event loop chính.
+- Có thể tận dụng nhiều CPU core.
+
+Nhược điểm:
+
+- Tăng độ phức tạp.
+- Có overhead truyền dữ liệu giữa thread.
+- Cần quản lý pool, timeout, error.
+
+### 2.8 Error handling trong Node.js
+
+Mục tiêu của error handling là:
+
+- Không làm app crash ngoài ý muốn.
+- Không nuốt lỗi.
+- Log đủ context để debug.
+- Trả error response nhất quán cho client.
+
+Nguyên tắc:
+
+- Luôn `await` hoặc return Promise.
+- Dùng `try/catch` khi cần map lỗi sang domain/HTTP error.
+- Không catch rồi bỏ qua.
+- Không trả stack trace/internal error ra client.
+- Log kèm request id/correlation id.
+
+Ví dụ:
+
+```ts
+try {
+  const order = await orderService.createOrder(input);
+  return order;
+} catch (error) {
+  this.logger.error("Create order failed", {
+    requestId,
+    userId,
+    error,
+  });
+
+  throw error;
+}
+```
+
+Pitfall:
+
+```ts
+users.forEach(async (user) => {
+  await sendEmail(user.email);
+});
+```
+
+`forEach` không await các Promise bên trong. Nên dùng:
+
+```ts
+for (const user of users) {
+  await sendEmail(user.email);
+}
+```
+
+Hoặc nếu chạy song song có kiểm soát:
+
+```ts
+await Promise.all(users.map((user) => sendEmail(user.email)));
+```
+
+## 3. TypeScript backend
+
+### 3.1 Vì sao backend Node.js nên dùng TypeScript?
+
+TypeScript giúp phát hiện lỗi ở compile time, mô tả contract rõ hơn, hỗ trợ refactor an toàn hơn và làm codebase lớn dễ maintain hơn.
+
+Lợi ích:
+
+- Giảm lỗi truyền sai shape object.
+- DTO, service interface, repository contract rõ ràng.
+- IDE autocomplete/refactor tốt.
+- Dễ onboard team hơn.
+
+Giới hạn:
+
+- TypeScript không validate runtime data.
+- Dữ liệu từ HTTP body, DB, queue, external API vẫn cần validate.
+- Type có thể bị bypass bằng `any`, type assertion sai.
+
+Câu cần nói:
+
+> TypeScript giúp kiểm tra kiểu ở compile time, nhưng input từ bên ngoài vẫn là runtime data nên vẫn cần validation bằng DTO/schema. Em không coi TypeScript là thay thế cho validation.
+
+### 3.2 `unknown` vs `any`
+
+`any` tắt kiểm tra kiểu. Khi một biến là `any`, TypeScript cho phép gọi mọi property/method mà không cảnh báo.
+
+`unknown` nghĩa là "chưa biết kiểu". Muốn dùng phải narrow type trước.
+
+Ví dụ:
+
+```ts
+function handlePayload(payload: unknown) {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "email" in payload
+  ) {
+    // Lúc này mới xử lý tiếp sau khi validate/narrow.
+  }
+}
+```
+
+So sánh:
+
+| Tiêu chí | `any` | `unknown` |
+| --- | --- | --- |
+| Type safety | Kém | Tốt hơn |
+| Có cần kiểm tra trước khi dùng | Không | Có |
+| Phù hợp cho input bên ngoài | Không nên | Nên |
+| Rủi ro runtime error | Cao | Thấp hơn |
+
+Khi dùng:
+
+- Dùng `unknown` cho JSON parse, message từ queue, external webhook.
+- Tránh `any` trừ khi đang migrate code hoặc wrapper library quá khó type.
+
+### 3.3 `interface` vs `type`
+
+`interface` thường dùng để mô tả shape của object/class contract.
+
+```ts
+interface UserRepository {
+  findById(id: string): Promise<User | null>;
+}
+```
+
+`type` linh hoạt hơn, dùng tốt cho union, intersection, mapped type, function type.
+
+```ts
+type ApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+```
+
+So sánh:
+
+| Tiêu chí | `interface` | `type` |
+| --- | --- | --- |
+| Object shape | Rất phù hợp | Phù hợp |
+| Union type | Không | Có |
+| Declaration merging | Có | Không |
+| Mapped/conditional type | Hạn chế | Mạnh hơn |
+
+Khi phỏng vấn:
+
+> Em thường dùng interface cho public object contract hoặc abstraction như repository, service port. Em dùng type cho union, utility, mapped type hoặc API result phức tạp. Quan trọng nhất là convention thống nhất trong team.
+
+### 3.4 Generic
+
+Generic cho phép viết code tái sử dụng mà vẫn giữ type safety.
+
+Ví dụ pagination:
+
+```ts
+type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+function createPaginatedResult<T>(
+  items: T[],
+  total: number,
+  page: number,
+  pageSize: number,
+): PaginatedResult<T> {
+  return { items, total, page, pageSize };
+}
+```
+
+Khi dùng:
+
+- Repository/helper dùng chung.
+- API response wrapper.
+- Pagination.
+- Cache wrapper.
+- Event/message envelope.
+
+Không nên lạm dụng:
+
+- Generic quá nhiều tầng làm code khó đọc.
+- Generic không mang lại type safety thực tế.
+- Dùng generic để "khoe kỹ thuật" thay vì giải quyết duplication.
+
+### 3.5 Utility types hay dùng
+
+- `Partial<T>`: tất cả field thành optional, hay dùng cho update nội bộ.
+- `Required<T>`: tất cả field bắt buộc.
+- `Pick<T, K>`: lấy một số field.
+- `Omit<T, K>`: bỏ một số field.
+- `Record<K, V>`: map key-value.
+- `Readonly<T>`: tránh mutate object.
+- `ReturnType<T>`: lấy kiểu return của function.
+
+Ví dụ:
+
+```ts
+type UserPublicDto = Omit<User, "passwordHash" | "refreshTokenHash">;
+
+type UpdateUserInput = Partial<Pick<User, "displayName" | "avatarUrl">>;
+
+type PermissionMap = Record<string, boolean>;
+```
+
+Lưu ý: không nên dùng `Partial<Entity>` trực tiếp làm DTO public nếu entity có field nhạy cảm.
+
+## 4. Kiến trúc NestJS
+
+### 4.1 NestJS là gì?
+
+NestJS là framework backend cho Node.js, thường dùng với TypeScript. Nest xây trên Express hoặc Fastify, cung cấp kiến trúc module, dependency injection, decorator, lifecycle và testing pattern.
+
+NestJS phù hợp khi:
+
+- Codebase backend lớn.
+- Nhiều module/domain.
+- Team cần convention rõ.
+- Cần test, DI, guard, interceptor, validation, OpenAPI.
+
+Ưu điểm:
+
+- Có cấu trúc rõ ràng.
+- DI tốt, dễ mock/test.
+- Request lifecycle mạnh.
+- Dễ tổ chức module theo domain.
+- Hợp với enterprise/backend lớn.
+
+Nhược điểm:
+
+- Nhiều abstraction hơn Express thuần.
+- Người mới cần hiểu decorator, DI, module.
+- Nếu project rất nhỏ, Nest có thể hơi nặng.
+
+Câu trả lời ngắn:
+
+> Express cho mình web framework tối giản. NestJS xây trên Express/Fastify nhưng thêm kiến trúc module, DI, decorator, guard, pipe, interceptor, filter và testing pattern. Với project lớn, Nest giúp code có convention rõ và dễ maintain hơn.
+
+### 4.2 Module
+
+Module là đơn vị tổ chức code trong NestJS. Một module gom controller, provider và các dependency liên quan.
+
+Ví dụ:
+
+```ts
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService, UsersRepository],
+  exports: [UsersService],
+})
+export class UsersModule {}
+```
+
+Bản chất:
+
+- `controllers`: xử lý HTTP route.
+- `providers`: service, repository, client, helper được DI container quản lý.
+- `imports`: import module khác.
+- `exports`: provider cho module khác dùng.
+
+Cách chia module:
+
+- Theo feature/domain: `AuthModule`, `UsersModule`, `OrdersModule`.
+- Tránh `SharedModule` quá lớn chứa mọi thứ.
+- Không để business logic trong module file.
+
+Pitfall:
+
+- Circular dependency giữa module.
+- Export quá nhiều provider làm boundary mờ.
+- Module chia theo technical layer quá cứng như `ControllerModule`, `ServiceModule`, `RepositoryModule`, làm domain bị phân tán.
+
+### 4.3 Controller
+
+Controller nhận request từ client và trả response.
+
+Controller nên làm:
+
+- Định nghĩa route.
+- Nhận params/body/query.
+- Gọi service/use case.
+- Trả DTO/response.
+
+Controller không nên:
+
+- Chứa business logic phức tạp.
+- Query DB trực tiếp.
+- Gọi nhiều external service và tự orchestration phức tạp.
+- Format response/error thủ công lặp lại ở nhiều nơi.
+
+Ví dụ:
+
+```ts
+@Controller("users")
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Get(":id")
+  async getUser(@Param("id") id: string): Promise<UserResponseDto> {
+    return this.usersService.getUserById(id);
+  }
+}
+```
+
+Câu cần nói:
+
+> Controller là HTTP adapter. Business logic nên nằm ở service/use case để dễ test và không bị phụ thuộc HTTP layer.
+
+### 4.4 Provider, Service, Repository
+
+Provider là class/value/factory được Nest DI container quản lý và inject vào nơi khác.
+
+Service thường chứa use case hoặc business orchestration.
+
+Repository chịu trách nhiệm truy cập database/persistence.
+
+Ranh giới nên có:
+
+```text
+Controller
+  -> nhận HTTP request
+Service / Use case
+  -> xử lý business flow
+Repository
+  -> query database
+External client
+  -> gọi service bên ngoài
+```
+
+Ví dụ:
 
 ```ts
 @Injectable()
 export class UsersService {
   constructor(private readonly usersRepository: UsersRepository) {}
+
+  async getUserById(id: string): Promise<UserResponseDto> {
+    const user = await this.usersRepository.findById(id);
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    return UserResponseDto.fromEntity(user);
+  }
 }
 ```
 
-Custom provider cần biết:
+Lợi ích khi tách:
+
+- Dễ unit test service bằng cách mock repository.
+- Có thể thay ORM/DB implementation dễ hơn.
+- Controller mỏng, dễ đọc.
+- Business rule tập trung.
+
+### 4.5 Dependency Injection
+
+Dependency Injection là kỹ thuật đưa dependency từ bên ngoài vào class thay vì class tự tạo dependency.
+
+Không tốt:
 
 ```ts
-providers: [
-  { provide: CACHE_TTL, useValue: 60 },
-  { provide: PaymentClient, useClass: StripePaymentClient },
-  {
-    provide: DATABASE_OPTIONS,
-    useFactory: (config: ConfigService) => ({
-      url: config.getOrThrow("DATABASE_URL"),
-    }),
-    inject: [ConfigService],
-  },
-  { provide: LoggerAlias, useExisting: LoggerService },
-];
+class UsersService {
+  private repository = new UsersRepository();
+}
 ```
 
-Khi dùng string token, nên khai báo constant/symbol riêng, tránh rải string literal khắp code.
+Tốt hơn trong Nest:
 
-### Injection scope
+```ts
+@Injectable()
+class UsersService {
+  constructor(private readonly repository: UsersRepository) {}
+}
+```
 
-- `DEFAULT`: singleton, dùng cho hầu hết provider.
-- `REQUEST`: tạo instance mới mỗi request, hữu ích cho tenant/request context nhưng tốn tài nguyên và có thể kéo scope lan lên controller/service phụ thuộc.
-- `TRANSIENT`: mỗi consumer nhận instance riêng.
+Lợi ích:
 
-Trong phỏng vấn, câu trả lời tốt là: mặc định dùng singleton; request scope chỉ dùng khi có lý do rõ như per-request context, multi-tenant, correlation data. Với logging/correlation id, cân nhắc `AsyncLocalStorage` thay vì request-scoped service nếu hệ thống tải cao.
+- Dễ test: mock dependency.
+- Giảm coupling.
+- Quản lý lifecycle provider tốt hơn.
+- Dễ thay implementation bằng custom provider.
 
-### Dynamic module
+Custom provider:
 
-Dùng khi module cần cấu hình lúc import, ví dụ `ConfigModule.forRoot()`, `JwtModule.register()`, `DatabaseModule.forRootAsync()`.
+```ts
+{
+  provide: "PAYMENT_CLIENT",
+  useFactory: (config: ConfigService) => {
+    return new PaymentClient(config.getOrThrow("PAYMENT_API_KEY"));
+  },
+  inject: [ConfigService],
+}
+```
+
+Pitfall:
+
+- Inject quá nhiều dependency vào một service là dấu hiệu service có quá nhiều trách nhiệm.
+- Dùng string token lung tung làm khó refactor; nên đặt constant token.
+- Circular dependency thường là dấu hiệu module/service boundary chưa tốt.
+
+### 4.6 Injection scope
+
+NestJS có 3 scope phổ biến:
+
+| Scope | Ý nghĩa | Khi dùng |
+| --- | --- | --- |
+| Singleton | Một instance dùng chung toàn app | Mặc định, nên dùng hầu hết trường hợp |
+| Request-scoped | Mỗi request tạo instance riêng | Khi provider cần state theo request |
+| Transient | Mỗi nơi inject có instance riêng | Ít dùng, cho provider có state riêng |
+
+Singleton là mặc định và thường tốt nhất.
+
+Request-scoped provider có nhược điểm:
+
+- Tạo nhiều object hơn.
+- Có thể ảnh hưởng performance.
+- Nếu một provider request-scoped được inject sâu, nhiều provider liên quan cũng có thể bị kéo theo request scope.
+
+Câu trả lời:
+
+> Em chỉ dùng request-scoped provider khi thật sự cần context riêng theo request và không muốn truyền context qua tham số. Mặc định em dùng singleton vì nhẹ và phù hợp với stateless service.
+
+### 4.7 Dynamic module
+
+Dynamic module là module có thể nhận config khi import.
+
+Ví dụ quen thuộc:
+
+```ts
+JwtModule.register({
+  secret: process.env.JWT_SECRET,
+  signOptions: { expiresIn: "15m" },
+});
+```
+
+Khi tự viết:
 
 ```ts
 @Module({})
-export class DatabaseModule {
-  static forRoot(options: DatabaseOptions): DynamicModule {
+export class PaymentModule {
+  static register(options: PaymentModuleOptions): DynamicModule {
     return {
-      module: DatabaseModule,
-      providers: [{ provide: DATABASE_OPTIONS, useValue: options }],
-      exports: [DATABASE_OPTIONS],
+      module: PaymentModule,
+      providers: [
+        {
+          provide: PAYMENT_OPTIONS,
+          useValue: options,
+        },
+        PaymentService,
+      ],
+      exports: [PaymentService],
     };
   }
 }
 ```
 
-## 4. Request Lifecycle
+Khi dùng:
 
-Luồng tổng quát:
+- SDK module cần config.
+- Module dùng lại ở nhiều app.
+- Cần async config từ `ConfigService`.
 
-```txt
-Middleware
--> Guards
--> Interceptors (before)
--> Pipes
--> Controller
--> Service/Provider
--> Interceptors (after)
--> Exception Filters nếu có lỗi
+Không nên dùng dynamic module nếu module chỉ dùng nội bộ đơn giản, vì sẽ làm code phức tạp không cần thiết.
+
+### 4.8 Circular dependency
+
+Circular dependency xảy ra khi A phụ thuộc B và B phụ thuộc A.
+
+Ví dụ:
+
+```text
+UsersService -> AuthService
+AuthService -> UsersService
 ```
 
-### Middleware
+Nest có `forwardRef`, nhưng không nên coi đó là giải pháp đầu tiên.
 
-- Chạy trước guard.
-- Thường dùng cho request logging thô, attach request id, parse cookie, tích hợp middleware Express/Fastify.
-- Không phù hợp cho authorization theo route vì không có metadata handler/class như guard.
+Cách xử lý tốt hơn:
 
-### Guard
+- Tách shared logic ra service thứ ba.
+- Đảo chiều dependency qua interface/event.
+- Xem lại boundary giữa module.
+- Dùng domain event nếu chỉ cần thông báo sau khi action xảy ra.
 
-- Quyết định request có được đi tiếp hay không.
-- Dùng cho authentication, authorization, role/permission, feature flag.
-- Có thể đọc metadata bằng `Reflector`.
+Câu trả lời:
 
-### Interceptor
+> `forwardRef` giải quyết được lỗi DI trước mắt, nhưng nếu dùng nhiều thì thường là dấu hiệu thiết kế module chưa tốt. Em ưu tiên tách responsibility hoặc dùng event/interface để giảm coupling.
 
-- Bọc trước/sau controller.
-- Dùng cho response mapping, logging duration, cache, timeout, serialization, tracing.
-- Vì dùng RxJS `Observable`, cần biết `next.handle().pipe(map(...), catchError(...))`.
+## 5. Request lifecycle trong NestJS
 
-### Pipe
+### 5.1 Thứ tự tổng quan
 
-- Transform và validate input.
-- Ví dụ: `ParseIntPipe`, `ValidationPipe`, custom pipe parse ObjectId.
-- Pipe chạy gần controller, sau guard/interceptor before.
+Một request trong NestJS thường đi qua:
 
-### Exception filter
+```text
+Client request
+-> Middleware
+-> Guard
+-> Interceptor before
+-> Pipe
+-> Controller
+-> Service/Provider
+-> Interceptor after
+-> Exception filter nếu có lỗi
+-> Response
+```
 
-- Chuẩn hóa lỗi trả về client.
-- Dùng khi muốn map lỗi database/domain sang HTTP response hoặc format error thống nhất.
+Cần nắm vì phỏng vấn NestJS rất hay hỏi guard, pipe, interceptor khác nhau như thế nào.
 
-## 5. Validation, DTO Và Serialization
+### 5.2 Middleware
 
-Thiết lập nên dùng ở `main.ts`:
+Middleware chạy sớm ở tầng HTTP adapter.
+
+Phù hợp để:
+
+- Gắn request id.
+- Logging request raw.
+- Parse cookie.
+- CORS/security header ở mức Express/Fastify.
+- Attach metadata đơn giản vào request.
+
+Không phù hợp để:
+
+- Authorization dựa trên route metadata.
+- Validate DTO.
+- Transform response.
+
+Lý do: middleware thường không có đầy đủ Nest execution context và decorator metadata như guard/interceptor.
+
+### 5.3 Guard
+
+Guard quyết định request có được đi tiếp vào route handler hay không.
+
+Dùng cho:
+
+- Authentication: user đã đăng nhập chưa?
+- Authorization: user có role/permission không?
+- Ownership: user có quyền trên resource này không?
+
+Ví dụ:
+
+```ts
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    return Boolean(request.user);
+  }
+}
+```
+
+Câu trả lời:
+
+> Guard trả lời câu hỏi "request này có được phép vào route không?". Vì guard có access tới execution context và metadata, nó phù hợp cho auth/authz hơn middleware.
+
+### 5.4 Pipe
+
+Pipe dùng để validate hoặc transform input trước khi vào controller method.
+
+Ví dụ:
+
+```ts
+@Get(":id")
+getUser(@Param("id", ParseIntPipe) id: number) {
+  return this.usersService.getUser(id);
+}
+```
+
+Dùng cho:
+
+- Validate DTO.
+- Transform string param thành number/UUID.
+- Sanitize input.
+
+Không dùng pipe cho:
+
+- Authorization.
+- Logging duration.
+- Transform response.
+
+### 5.5 Interceptor
+
+Interceptor bọc quanh route handler, có thể chạy trước và sau handler.
+
+Dùng cho:
+
+- Logging thời gian xử lý.
+- Transform response.
+- Cache response.
+- Timeout.
+- Serialization.
+- Mapping stream/observable.
+
+Ví dụ ý tưởng:
+
+```ts
+@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    const startedAt = Date.now();
+
+    return next.handle().pipe(
+      tap(() => {
+        console.log(`Request took ${Date.now() - startedAt}ms`);
+      }),
+    );
+  }
+}
+```
+
+Câu trả lời:
+
+> Interceptor phù hợp cho cross-cutting concerns quanh handler, ví dụ logging, response mapping, cache, timeout. Nó khác pipe vì pipe xử lý input, khác guard vì guard quyết định có cho request đi tiếp không.
+
+### 5.6 Exception filter
+
+Exception filter dùng để bắt exception và chuyển thành response chuẩn.
+
+Mục tiêu:
+
+- Chuẩn hóa error response.
+- Map domain error sang HTTP status.
+- Không leak stack trace/internal error ra client.
+- Gắn request id vào error response.
+
+Ví dụ response:
+
+```json
+{
+  "code": "USER_NOT_FOUND",
+  "message": "User not found",
+  "requestId": "req_123",
+  "details": []
+}
+```
+
+Pitfall:
+
+- Mỗi controller tự `try/catch` rồi trả format khác nhau.
+- Trả raw error từ database.
+- Trả `500` cho lỗi validation/business.
+
+## 6. DTO, validation và serialization
+
+### 6.1 DTO là gì?
+
+DTO là object mô tả dữ liệu đi vào hoặc đi ra khỏi API. DTO giúp tách API contract khỏi entity/internal model.
+
+Input DTO:
+
+- Validate request body/query/param.
+- Mô tả field client được gửi.
+
+Output DTO:
+
+- Kiểm soát field trả về.
+- Tránh leak field nhạy cảm như password hash, refresh token, internal flag.
+
+Ví dụ:
+
+```ts
+export class CreateUserDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  displayName?: string;
+}
+```
+
+### 6.2 ValidationPipe
+
+Cấu hình thường dùng:
 
 ```ts
 app.useGlobalPipes(
@@ -246,348 +979,512 @@ app.useGlobalPipes(
 
 Ý nghĩa:
 
-- `whitelist`: bỏ field không có decorator validation.
-- `forbidNonWhitelisted`: báo lỗi nếu client gửi field lạ.
-- `transform`: chuyển plain object sang DTO class, hỗ trợ parse type khi cấu hình đúng.
+- `whitelist: true`: loại bỏ field không khai báo trong DTO.
+- `forbidNonWhitelisted: true`: báo lỗi nếu client gửi field lạ.
+- `transform: true`: transform input theo DTO/metatype khi phù hợp.
 
-DTO nên tách theo use case:
+Ưu điểm:
 
-```ts
-export class CreateUserDto {
-  @IsEmail()
-  email: string;
+- Giảm boilerplate validate ở controller.
+- API contract rõ.
+- Tránh client gửi field ngoài ý muốn.
 
-  @IsString()
-  @MinLength(8)
-  password: string;
-}
-```
+Giới hạn:
 
-Không dùng entity/database model trực tiếp làm request DTO hoặc response DTO. Request DTO phản ánh input client được phép gửi; response DTO kiểm soát dữ liệu trả ra, tránh leak `passwordHash`, internal flags, token.
-
-## 6. Authentication Và Authorization
-
-### Authentication
-
-Luồng JWT phổ biến:
-
-1. User login bằng email/password.
-2. Service kiểm tra password bằng bcrypt/argon2.
-3. Tạo access token ngắn hạn, refresh token dài hơn nếu cần.
-4. `JwtStrategy` validate token và gắn user/payload vào request.
-5. `AuthGuard('jwt')` bảo vệ endpoint.
-
-Điểm phỏng vấn hay hỏi:
-
-- Access token nên ngắn hạn; refresh token cần revoke/rotate nếu hệ thống yêu cầu bảo mật cao.
-- Không lưu secret trong code.
-- Không trả password hash ra API.
-- Nên dùng HTTPS, secure cookie hoặc Authorization header tùy architecture.
-
-### Authorization
-
-- Role-based: `ADMIN`, `USER`, `MANAGER`.
-- Permission-based: `user:create`, `order:refund`.
-- Attribute-based: user chỉ sửa resource thuộc chính họ.
-
-Ví dụ trả lời:
-
-> JWT chỉ chứng minh "bạn là ai". Authorization quyết định "bạn được làm gì". Vì vậy sau `JwtAuthGuard`, hệ thống vẫn cần `RolesGuard`/`PoliciesGuard` hoặc logic ownership trong service.
-
-## 7. Database, Transaction Và Migration
-
-### Prisma vs TypeORM
-
-Không nên trả lời tuyệt đối "Prisma luôn tốt hơn TypeORM". Câu trả lời cân bằng:
-
-- Prisma: type-safety tốt, schema rõ, DX tốt, query API dễ đọc, migration tiện.
-- TypeORM: quen với decorator/entity, repository pattern truyền thống, QueryBuilder linh hoạt, phù hợp team đã có nền OOP/ORM.
-- Chọn theo team, legacy, độ phức tạp query, yêu cầu migration, ecosystem hiện có.
-
-### Transaction
-
-Khi một use case cần nhiều thao tác DB phải cùng thành công hoặc cùng rollback, dùng transaction.
+- Không thay thế business validation.
+- Không thay thế DB constraint.
+- Cần cẩn thận với transform nếu input phức tạp.
 
 Ví dụ:
 
+- DTO validate email format.
+- Service check email đã tồn tại chưa.
+- Database unique constraint đảm bảo cuối cùng không duplicate khi race condition.
+
+### 6.3 Entity không nên trả thẳng ra API
+
+Không nên:
+
+```ts
+return this.userRepository.findById(id);
+```
+
+Nếu entity có:
+
+```ts
+{
+  id,
+  email,
+  passwordHash,
+  refreshTokenHash,
+  internalNote
+}
+```
+
+Client có thể nhận field nhạy cảm nếu quên strip.
+
+Nên map sang response DTO:
+
+```ts
+export class UserResponseDto {
+  id!: string;
+  email!: string;
+  displayName!: string;
+
+  static fromEntity(user: User): UserResponseDto {
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+    };
+  }
+}
+```
+
+## 7. Authentication và Authorization
+
+### 7.1 Authentication là gì?
+
+Authentication là xác minh "người dùng là ai".
+
+Ví dụ:
+
+- Login bằng email/password.
+- Verify JWT access token.
+- Verify session cookie.
+- Verify API key.
+
+Kết quả authentication thường là `request.user`.
+
+### 7.2 Authorization là gì?
+
+Authorization là xác định "người dùng được làm gì".
+
+Ví dụ:
+
+- User đã login nhưng có được xóa bài viết này không?
+- User có role admin không?
+- User có permission `user:ban` không?
+- User có phải owner của resource không?
+
+Câu trả lời:
+
+> Authentication trả lời "bạn là ai", authorization trả lời "bạn được làm gì". Trong NestJS, authentication/authorization thường được xử lý bằng guard.
+
+### 7.3 JWT access token và refresh token
+
+Access token:
+
+- Thời gian sống ngắn.
+- Gửi kèm request API.
+- Dùng để xác thực nhanh.
+- Nếu bị lộ, rủi ro giới hạn theo TTL.
+
+Refresh token:
+
+- Thời gian sống dài hơn.
+- Dùng để lấy access token mới.
+- Nên có rotation và revoke.
+- Nếu lưu DB, nên lưu hash thay vì plaintext token.
+
+Flow phổ biến:
+
+```text
+Login thành công
+-> trả access token ngắn hạn
+-> trả refresh token dài hơn qua HttpOnly cookie hoặc secure storage
+Access token hết hạn
+-> client gọi refresh endpoint
+-> server verify refresh token
+-> rotate refresh token
+-> cấp access token mới
+```
+
+Vấn đề quan trọng:
+
+- Token đặt ở localStorage dễ bị lấy nếu XSS.
+- Cookie HttpOnly giảm rủi ro token bị JavaScript đọc, nhưng cần quan tâm CSRF.
+- Refresh token nên revoke được khi logout/đổi mật khẩu/phát hiện bất thường.
+
+### 7.4 RBAC, permission và ownership
+
+RBAC là phân quyền theo role:
+
+- `admin`
+- `moderator`
+- `user`
+
+Ưu điểm:
+
+- Dễ hiểu.
+- Dễ triển khai.
+- Hợp với hệ thống quyền đơn giản.
+
+Nhược điểm:
+
+- Khó linh hoạt khi permission phức tạp.
+- Role có thể phình to.
+
+Permission-based:
+
+- `post:create`
+- `post:update`
+- `user:ban`
+- `report:view`
+
+Ưu điểm:
+
+- Linh hoạt.
+- Phù hợp hệ thống lớn.
+
+Nhược điểm:
+
+- Cần quản lý permission matrix.
+- Dễ rối nếu không có convention.
+
+Ownership:
+
+- User chỉ sửa bài viết của chính họ.
+- User chỉ xem order của chính họ.
+
+Thực tế thường kết hợp:
+
+```text
+Role -> tập permission
+Permission -> quyền hành động
+Ownership -> quyền trên resource cụ thể
+```
+
+## 8. Database integration trong NestJS
+
+### 8.1 Transaction boundary
+
+Transaction boundary nên nằm ở service/use case layer, vì service hiểu toàn bộ business action.
+
+Không tốt:
+
+```text
+Controller
+-> repository A tự mở transaction
+-> repository B tự mở transaction khác
+```
+
+Vấn đề:
+
+- Một use case bị chia thành nhiều transaction.
+- Có thể update một phần rồi fail.
+- Khó rollback toàn bộ business action.
+
+Tốt hơn:
+
+```text
+Service/use case
+-> mở transaction
+-> gọi repository A
+-> gọi repository B
+-> commit/rollback
+```
+
+Ví dụ business action:
+
 - Tạo order.
-- Trừ tồn kho.
-- Ghi payment record.
+- Trừ inventory.
+- Tạo payment record.
 - Ghi outbox event.
 
-Nếu một bước fail, rollback toàn bộ.
+Các bước này nên nằm trong cùng transaction nếu yêu cầu atomicity.
 
-Lưu ý:
+### 8.2 Prisma vs TypeORM
 
-- Không gọi API ngoài quá lâu bên trong DB transaction.
-- Transaction càng ngắn càng tốt.
-- Với message/event, cân nhắc outbox pattern để tránh DB commit thành công nhưng publish message thất bại.
+Không nên trả lời kiểu "cái nào luôn tốt hơn". Nên nói trade-off.
 
-### Migration
+Prisma:
 
-- Migration là version control cho schema database.
-- Không sửa production DB thủ công.
-- Local/dev có thể generate migration; production chỉ apply migration đã review.
-- Migration destructive cần plan backfill/rollback rõ.
+- Developer experience tốt.
+- Type safety tốt.
+- Migration và schema rõ.
+- Query phức tạp đôi khi cần raw SQL.
+- Một số pattern transaction/custom repository cần thiết kế cẩn thận.
 
-## 8. Performance Và Production Readiness
+TypeORM:
 
-### Caching
+- Gần với ORM truyền thống.
+- Có entity, repository, decorator.
+- Linh hoạt với pattern OOP.
+- Type safety/query DX có thể không tốt bằng Prisma trong một số trường hợp.
+- Dễ bị lạm dụng lazy relation/N+1 nếu không cẩn thận.
 
-- Cache read-heavy data bằng Redis hoặc cache manager.
-- Cần TTL, invalidation strategy, cache key rõ ràng.
-- Không cache dữ liệu nhạy cảm theo key chung.
-- Với endpoint theo user, cache key phải chứa user/tenant context nếu dữ liệu khác nhau.
+Câu trả lời:
 
-### Rate limiting
+> Em chọn theo team convention, độ phức tạp query, migration strategy và khả năng vận hành. Quan trọng hơn ORM là biết transaction boundary, query plan, index, migration và tránh N+1.
 
-- Dùng để chống brute force, abuse, scraping.
-- Login/register/password reset nên có limit riêng.
-- Trong hệ thống có reverse proxy/load balancer, cần cấu hình trust proxy/IP extraction đúng.
+### 8.3 Migration
 
-### Queue/background job
+Migration là thay đổi schema database có version.
 
-Dùng queue khi task:
+Cần chú ý:
 
-- Chạy lâu hơn request/response bình thường.
-- Có retry.
-- Không cần client chờ kết quả ngay.
-- Ví dụ gửi email, resize video/image, sync third-party, generate report.
+- Migration phải được review như code.
+- Không chạy destructive migration tùy tiện.
+- Cần backward compatibility khi rolling deploy.
+- Với thay đổi lớn nên dùng expand/contract pattern.
 
-Trong Nest có thể dùng BullMQ/Redis hoặc message broker tùy hệ thống.
+Ví dụ expand/contract:
 
-### Logging và observability
+1. Add column mới nullable.
+2. Deploy code ghi cả field cũ và mới.
+3. Backfill data.
+4. Deploy code đọc field mới.
+5. Drop field cũ sau khi an toàn.
 
-Nên có:
+## 9. Production readiness
 
-- Structured log JSON.
-- Request id/correlation id.
-- Error log có stack ở server, không expose cho client.
-- Metrics: latency, error rate, throughput, queue lag.
-- Health check cho app, DB, Redis, broker.
+### 9.1 Một API production-ready cần gì?
 
-### Graceful shutdown
+Không chỉ là "code chạy được". API production-ready cần:
 
-Khi deploy/restart:
+- Validation input.
+- Auth/authz.
+- Error response chuẩn.
+- Logging có request id/correlation id.
+- Timeout khi gọi external service.
+- Retry có kiểm soát với backoff.
+- Health check/readiness.
+- Graceful shutdown.
+- Metrics: latency, error rate, throughput.
+- Test cho use case quan trọng.
+- Migration/rollback plan.
+- Rate limit cho endpoint nhạy cảm.
+
+### 9.2 Error response chuẩn
+
+Nên có format thống nhất:
+
+```json
+{
+  "code": "USER_EMAIL_EXISTS",
+  "message": "Email already exists",
+  "requestId": "req_123",
+  "details": []
+}
+```
+
+Lợi ích:
+
+- Frontend xử lý lỗi dễ hơn.
+- Log/trace dễ hơn.
+- Không leak internal detail.
+- API contract ổn định hơn.
+
+Không nên:
+
+- Trả raw SQL error.
+- Trả stack trace.
+- Mỗi endpoint một format lỗi.
+- Dùng `500` cho mọi lỗi.
+
+### 9.3 Logging
+
+Log production nên là structured log, không chỉ string rời rạc.
+
+Ví dụ:
+
+```json
+{
+  "level": "error",
+  "message": "Create order failed",
+  "requestId": "req_123",
+  "userId": "user_42",
+  "route": "POST /orders",
+  "latencyMs": 532,
+  "errorCode": "PAYMENT_TIMEOUT"
+}
+```
+
+Log tốt giúp trả lời:
+
+- Request nào lỗi?
+- User/tenant nào bị ảnh hưởng?
+- Lỗi ở dependency nào?
+- Latency nằm ở đoạn nào?
+- Có correlation id để trace qua service khác không?
+
+Không log:
+
+- Password.
+- Access token/refresh token.
+- Secret/API key.
+- PII nhạy cảm nếu không cần.
+
+### 9.4 Timeout, retry, circuit breaker
+
+Khi gọi external service, luôn cần timeout.
+
+Retry:
+
+- Chỉ retry lỗi tạm thời: timeout, network reset, 502/503.
+- Dùng exponential backoff và jitter.
+- Không retry vô điều kiện request không idempotent.
+
+Circuit breaker:
+
+- Nếu dependency fail liên tục, tạm ngưng gọi.
+- Trả fallback/error nhanh.
+- Tránh cascade failure.
+
+Câu trả lời:
+
+> Với external API, em luôn đặt timeout. Retry chỉ dùng cho lỗi tạm thời và phải có backoff. Với request có side effect, cần idempotency key trước khi retry. Nếu dependency lỗi liên tục, circuit breaker giúp hệ thống fail fast thay vì kéo sập toàn bộ request pool.
+
+### 9.5 Graceful shutdown
+
+Graceful shutdown nghĩa là khi app bị restart/deploy, app không cắt ngang request/job đang xử lý một cách tùy tiện.
+
+Cần làm:
 
 - Ngừng nhận request mới.
-- Chờ request đang chạy hoàn tất trong timeout.
-- Đóng DB connection, Redis, broker consumer.
-- Với Nest có thể bật shutdown hooks và xử lý lifecycle hooks như `onModuleDestroy`, `beforeApplicationShutdown`.
+- Cho request đang chạy hoàn tất trong timeout hợp lý.
+- Đóng DB connection.
+- Dừng queue consumer đúng cách.
+- Báo readiness false trước khi process bị kill.
 
-## 9. Microservices Trong NestJS
+Trong NestJS:
 
-Nest hỗ trợ nhiều transport: TCP, Redis, MQTT, NATS, RabbitMQ, Kafka, gRPC.
+```ts
+app.enableShutdownHooks();
+```
 
-Điểm cần phân biệt:
+Provider có thể implement:
 
-- `client.send(pattern, data)`: request-response, caller chờ kết quả.
-- `client.emit(pattern, data)`: event fire-and-forget, phù hợp event-driven.
+- `OnModuleDestroy`
+- `BeforeApplicationShutdown`
+- `OnApplicationShutdown`
 
-Khi chọn broker:
+### 9.6 Health check
 
-- RabbitMQ: task queue, routing, acknowledgement, retry/dead-letter tốt.
-- Kafka: event streaming, throughput lớn, lưu log, consumer group, analytics/event pipeline.
-- gRPC: service-to-service RPC typed contract, low latency.
-- TCP/Redis transport: đơn giản hơn nhưng cần cân nhắc reliability/observability.
+Health check không chỉ là trả `200 OK`.
 
-Trong microservices, cần nói thêm về timeout, retry, idempotency, tracing, schema/versioning và dead-letter queue.
+Nên tách:
 
-## 10. Testing
+- Liveness: process còn sống không? Nếu fail thì restart.
+- Readiness: app đã sẵn sàng nhận traffic chưa? Nếu fail thì tạm tháo khỏi load balancer.
 
-### Unit test
+Readiness có thể kiểm tra:
 
-Test service/controller độc lập bằng `Test.createTestingModule`.
+- DB connection.
+- Redis connection nếu bắt buộc.
+- Migration/schema version nếu cần.
+- App đã warm up xong chưa.
 
-- Mock repository, external API, queue, mailer.
-- Assert output và side effect.
-- Test cả happy path và error path.
+Cẩn thận:
+
+- Health check quá nặng có thể gây thêm tải.
+- Liveness check phụ thuộc DB có thể làm app restart hàng loạt khi DB chập chờn.
+
+## 10. Testing trong NestJS
+
+### 10.1 Unit test
+
+Unit test kiểm tra một đơn vị nhỏ, thường là service/use case, với dependency được mock.
+
+Nên test:
+
+- Happy path.
+- Business rule fail.
+- Dependency throw error.
+- Side effect được gọi đúng.
+- Không leak field nhạy cảm.
+
+Ví dụ:
 
 ```ts
 const moduleRef = await Test.createTestingModule({
   providers: [
     UsersService,
-    { provide: UsersRepository, useValue: mockUsersRepository },
+    {
+      provide: UsersRepository,
+      useValue: mockUsersRepository,
+    },
   ],
 }).compile();
+
+const service = moduleRef.get(UsersService);
 ```
 
-### E2E test
+Ưu điểm:
 
-- Boot app gần giống thật.
-- Gọi HTTP bằng `supertest`.
-- Dùng test database hoặc containerized DB.
-- Test validation, auth, status code, response shape, side effect trong DB.
+- Nhanh.
+- Dễ isolate business logic.
+- Dễ chạy trong CI.
 
-### Test thực tế nên có
+Nhược điểm:
 
-- Login sai password trả `401`.
-- User thường gọi endpoint admin trả `403`.
-- Create resource thiếu field trả `400`.
-- Unique email conflict trả `409`.
-- Transaction fail thì không ghi nửa vời.
+- Không bắt được lỗi integration giữa module, pipe, guard, DB.
 
-## 11. Câu Hỏi Thực Tế Hay Gặp
+### 10.2 E2E test
 
-### 1. NestJS khác Express ở điểm nào?
+E2E test kiểm tra từ HTTP layer qua app module đến dependency thật hoặc test container/test DB.
 
-Express là framework HTTP tối giản. NestJS xây trên Express hoặc Fastify adapter và cung cấp kiến trúc opinionated: module, DI, decorator, guard, pipe, interceptor, testing utilities. Nest phù hợp codebase lớn vì cấu trúc rõ và dễ test hơn, nhưng có learning curve và abstraction overhead.
+Nên cover:
 
-### 2. Vì sao không nên gọi repository trực tiếp từ controller?
+- Auth flow.
+- ValidationPipe.
+- Guard/interceptor/filter.
+- API contract chính.
+- Use case quan trọng như create order, login, permission.
 
-Controller là HTTP boundary, không nên chứa business logic. Nếu controller gọi repository trực tiếp, logic nghiệp vụ bị rải rác, khó test, khó tái sử dụng và khó đảm bảo transaction/authorization nhất quán. Service nên điều phối use case.
+Ưu điểm:
 
-### 3. Guard, pipe, interceptor khác nhau thế nào?
+- Gần production hơn.
+- Bắt lỗi wiring/module/config.
 
-Guard quyết định có cho request đi tiếp không. Pipe validate/transform input. Interceptor bọc trước/sau controller để logging, mapping response, cache, timeout. Nếu sai auth dùng guard; sai input dùng pipe; muốn đổi response format dùng interceptor.
+Nhược điểm:
 
-### 4. Middleware và guard khác nhau thế nào?
+- Chậm hơn unit test.
+- Setup phức tạp hơn.
+- Dễ flaky nếu phụ thuộc external service thật.
 
-Middleware chạy sớm, gần tầng HTTP adapter, không có context metadata mạnh như guard. Guard hiểu execution context và đọc được metadata từ controller/handler nên phù hợp auth/role theo route.
+### 10.3 Test pyramid thực tế
 
-### 5. Request lifecycle trong NestJS?
+Nên có:
 
-Middleware -> Guards -> Interceptors before -> Pipes -> Controller -> Service -> Interceptors after -> Exception Filters nếu có lỗi.
+- Nhiều unit test cho business logic.
+- Một số integration test cho repository/database query quan trọng.
+- E2E test cho critical path.
 
-### 6. `ValidationPipe` nên cấu hình thế nào?
+Không nên chỉ có E2E vì chậm và khó debug. Cũng không nên chỉ có unit test vì có thể miss lỗi wiring/config.
 
-Thường dùng `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`. Cấu hình này loại/báo lỗi field lạ, validate DTO và hỗ trợ transform input. Production có thể tùy chỉnh `exceptionFactory` để chuẩn hóa error response.
+## 11. Câu hỏi phỏng vấn hay gặp
 
-### 7. Khi nào dùng request-scoped provider?
+### Node.js xử lý nhiều request như thế nào nếu JavaScript single-thread?
 
-Khi provider thật sự cần state riêng cho từng request như tenant context hoặc per-request cache. Không dùng mặc định vì request scope tạo nhiều instance hơn, tăng GC và có thể làm scope lan lên các dependency khác.
+Node.js chạy JavaScript trên một main thread, nhưng I/O async được giao cho OS/libuv. Khi I/O hoàn tất, callback hoặc Promise continuation được đưa về event loop để xử lý. Vì vậy Node.js có thể xử lý nhiều request I/O-bound hiệu quả. Tuy nhiên nếu một request chạy CPU-heavy task trên main thread, event loop bị block và request khác sẽ chậm.
 
-### 8. Dynamic module dùng để làm gì?
+### Khi nào Node.js bị chậm?
 
-Dùng để module nhận config lúc import và tự đăng ký provider tương ứng. Ví dụ `JwtModule.registerAsync()`, `DatabaseModule.forRootAsync()`. Nó giúp module tái sử dụng được ở nhiều app/môi trường.
+Node.js bị chậm khi event loop bị block bởi CPU-heavy task, sync I/O, JSON payload quá lớn, xử lý file không dùng stream, hoặc dependency như DB/external API chậm nhưng không có timeout/backpressure. Cách xử lý là đo bottleneck, dùng async I/O, stream, worker/queue, cache, timeout và giới hạn concurrency.
 
-### 9. Circular dependency là gì và xử lý thế nào?
+### Guard, pipe, interceptor khác nhau thế nào?
 
-Circular dependency xảy ra khi A phụ thuộc B và B phụ thuộc A. Cách tốt nhất là tách trách nhiệm hoặc tạo service trung gian để phá vòng. `forwardRef()` là giải pháp kỹ thuật khi chưa refactor được, không nên lạm dụng.
+Guard quyết định request có được vào route không, thường dùng cho auth/authz. Pipe validate hoặc transform input trước khi vào controller. Interceptor bọc quanh handler, dùng cho logging, transform response, cache, timeout. Exception filter xử lý lỗi và chuẩn hóa error response.
 
-### 10. Làm sao chuẩn hóa error response?
+### Middleware và guard khác nhau thế nào?
 
-Dùng exception filter global để map `HttpException`, lỗi ORM, lỗi domain thành format thống nhất. Service có thể ném lỗi domain hoặc exception phù hợp; filter quyết định response cuối cùng.
+Middleware chạy sớm ở tầng HTTP adapter và phù hợp cho request id, raw logging, parse cookie. Guard chạy sau middleware, có execution context và route metadata, phù hợp cho authentication và authorization.
 
-### 11. Làm sao xử lý transaction trong NestJS?
+### Vì sao không nên gọi repository trực tiếp từ controller?
 
-Transaction thường đặt ở service/use case layer vì service biết toàn bộ nghiệp vụ cần atomic. Với Prisma dùng `$transaction`; với TypeORM dùng `QueryRunner` hoặc transaction manager. Không giữ transaction mở khi gọi external API lâu.
+Controller nên là HTTP adapter, không chứa business logic. Nếu controller gọi repository trực tiếp, business rule bị dính vào HTTP layer, khó test, khó reuse và dễ duplicate logic ở nhiều controller. Service/use case nên là nơi orchestration business flow.
 
-### 12. Làm sao tránh publish event thất bại sau khi DB commit?
+### Khi nào dùng request-scoped provider?
 
-Dùng outbox pattern: trong cùng transaction ghi business data và outbox event vào DB. Worker riêng đọc outbox để publish message, có retry/idempotency. Cách này giảm rủi ro mất event.
+Khi provider thật sự cần state riêng theo từng request, ví dụ request context phức tạp mà không muốn truyền qua tham số. Nhưng request scope tốn chi phí hơn singleton, nên không dùng mặc định.
 
-### 13. Khi nào dùng queue thay vì xử lý trực tiếp trong request?
+### Làm sao upload/xử lý file lớn an toàn?
 
-Khi tác vụ lâu, dễ fail cần retry, hoặc không cần client chờ: gửi email, tạo report, xử lý video, sync third-party. API chỉ enqueue job và trả response phù hợp.
+Không load toàn bộ file vào memory. Dùng stream/pipeline, giới hạn size/type, validate theo chunk/batch, lưu file vào object storage, xử lý hậu kỳ bằng background job nếu lâu, cập nhật progress và thiết kế retry/idempotency để worker crash không tạo duplicate.
 
-### 14. Làm sao bảo vệ endpoint login?
+### Một API production-ready cần gì?
 
-Dùng rate limit theo IP/user/email, hash password bằng bcrypt/argon2, trả lỗi chung để tránh user enumeration, log attempt bất thường, có lockout/captcha tùy mức rủi ro.
+Cần validation, auth/authz, error response chuẩn, logging có request id, metrics, tracing, timeout/retry, health check, graceful shutdown, test, CI/CD, migration/rollback plan và rate limit cho endpoint nhạy cảm.
 
-### 15. JWT access token và refresh token khác nhau thế nào?
-
-Access token ngắn hạn dùng để gọi API. Refresh token dài hơn dùng lấy access token mới. Refresh token cần lưu/revoke/rotate nếu muốn logout hoặc phát hiện token reuse.
-
-### 16. Role-based và permission-based authorization khác nhau thế nào?
-
-Role-based gán quyền theo vai trò như admin/user. Permission-based chi tiết hơn theo hành động như `order:refund`. Hệ thống lớn thường dùng permission/policy vì role dễ quá rộng.
-
-### 17. Prisma và TypeORM chọn cái nào?
-
-Không có đáp án tuyệt đối. Prisma mạnh về type-safety và DX. TypeORM hợp với entity/decorator/repository truyền thống. Chọn theo team, legacy, kiểu query, migration workflow và ecosystem.
-
-### 18. Làm sao tối ưu endpoint chậm?
-
-Đo trước bằng log/metrics/tracing. Kiểm tra N+1 query, thiếu index, payload quá lớn, gọi external API tuần tự, CPU-bound task, cache miss. Sau đó tối ưu query/index, parallelize I/O, cache, queue background job hoặc tách worker.
-
-### 19. Node.js xử lý nhiều request cùng lúc thế nào nếu JavaScript single-thread?
-
-JavaScript chạy trên main thread, nhưng I/O không blocking được giao cho OS/libuv. Khi I/O hoàn tất, callback/promise continuation quay lại event loop. Vì vậy Node xử lý concurrency tốt với I/O-bound workload, nhưng CPU-bound có thể block event loop.
-
-### 20. Promise, `process.nextTick`, `setImmediate`, `setTimeout` khác nhau thế nào?
-
-Promise callback là microtask. `process.nextTick` có queue ưu tiên cao của Node. `setTimeout` chạy ở timers phase sau thời gian tối thiểu. `setImmediate` chạy ở check phase. Không nên lạm dụng `nextTick` vì có thể làm event loop không quay lại I/O.
-
-### 21. Làm sao upload file lớn an toàn?
-
-Giới hạn size/type, stream file thay vì load vào RAM, scan nếu cần, lưu object storage, không tin filename từ client, dùng signed URL khi phù hợp, xử lý cleanup khi upload fail.
-
-### 22. E2E test khác unit test thế nào?
-
-Unit test cô lập một class/function và mock dependency. E2E test boot app, gọi endpoint thật qua HTTP, kiểm tra integration giữa route, validation, guard, service và DB/test infra.
-
-### 23. Làm sao mock provider trong test NestJS?
-
-Dùng `Test.createTestingModule()` và override provider bằng `useValue` hoặc `overrideProvider().useValue()`. Mock chỉ nên mô phỏng contract cần test, tránh mock quá sâu làm test phụ thuộc implementation.
-
-### 24. Khi nào dùng Fastify thay Express trong Nest?
-
-Fastify thường có performance tốt hơn và schema ecosystem riêng, phù hợp workload cần throughput cao. Express phổ biến, middleware nhiều, dễ tích hợp legacy. Cần kiểm tra compatibility middleware trước khi đổi adapter.
-
-### 25. Một API production-ready cần những gì ngoài code chạy được?
-
-Config theo môi trường, validation, auth, rate limit, logging có correlation id, metrics/tracing, health check, graceful shutdown, migration strategy, test, CI/CD, secret management, backup/rollback plan.
-
-## 12. Plan Ôn Tập 7 Ngày
-
-### Ngày 1: Node.js core
-
-- Event loop, microtask/macrotask, `nextTick`, `setImmediate`.
-- Blocking vs non-blocking.
-- Stream/backpressure.
-- Làm 5 câu hỏi thực tế phần Node.js.
-
-### Ngày 2: Nest architecture
-
-- Module, controller, provider, DI.
-- Custom provider, scope, dynamic module.
-- Vẽ dependency graph của một feature bất kỳ.
-
-### Ngày 3: Request lifecycle
-
-- Middleware, guard, interceptor, pipe, filter.
-- Viết thử custom `CurrentUser`, `RolesGuard`, `TransformResponseInterceptor`.
-
-### Ngày 4: Auth, validation, security
-
-- JWT strategy, refresh token, role/permission.
-- DTO validation config.
-- Rate limit, CORS, Helmet, password hashing.
-
-### Ngày 5: Database
-
-- Prisma/TypeORM tradeoff.
-- Transaction, migration, index, N+1 query.
-- Case order/payment/inventory.
-
-### Ngày 6: Production patterns
-
-- Cache, queue, retry, timeout.
-- Logging, health check, graceful shutdown.
-- Microservice `send` vs `emit`, broker tradeoff.
-
-### Ngày 7: Mock interview
-
-- Tự trả lời toàn bộ 25 câu thực tế.
-- Chuẩn bị 2 project stories: một bug khó, một tối ưu performance, một thiết kế API/module.
-- Ôn lại điểm yếu và luyện trả lời ngắn 1-2 phút/câu.
-
-## 13. Checklist Trước Khi Phỏng Vấn
-
-- Giải thích được request lifecycle không nhìn tài liệu.
-- Phân biệt guard/pipe/interceptor/filter bằng ví dụ thực tế.
-- Nói được DI scope và custom provider.
-- Có ví dụ transaction thực tế.
-- Có ví dụ xử lý endpoint chậm.
-- Có ví dụ test service và e2e endpoint.
-- Có kinh nghiệm hoặc phương án cho auth, queue, cache, logging.
-- Trả lời được ít nhất 20/25 câu hỏi ở phần trên.
-
-## Nguồn Chính Thức Đã Đối Chiếu
-
-- NestJS Custom Providers: https://docs.nestjs.com/fundamentals/custom-providers
-- NestJS Injection Scopes: https://docs.nestjs.com/fundamentals/injection-scopes
-- NestJS Request Lifecycle: https://docs.nestjs.com/faq/request-lifecycle
-- NestJS Validation: https://docs.nestjs.com/techniques/validation
-- Node.js Event Loop: https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick
