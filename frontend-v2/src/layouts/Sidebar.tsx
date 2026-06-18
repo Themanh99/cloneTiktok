@@ -106,12 +106,11 @@ export default function Sidebar() {
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const [morePosition, setMorePosition] = useState({ left: 16, bottom: 16 });
 
-  // Dynamically fetch followed accounts from backend API using react-query
-  // If not logged in, fetch for target user "the.manh99" to display beautiful sidebar content
-  const targetUserForFollowing = user?.id || 'the.manh99';
+  // Dynamically fetch followed accounts from backend API (only when logged in)
   const { data: followingData } = useQuery<{ data: FollowedUser[] }>({
-    queryKey: ['following', targetUserForFollowing],
-    queryFn: () => http.get(`/users/${targetUserForFollowing}/following`),
+    queryKey: ['following', user?.id],
+    queryFn: () => http.get(`/users/${user!.id}/following`),
+    enabled: !!user,
     retry: 1,
   });
   const followedAccounts = followingData?.data || [];

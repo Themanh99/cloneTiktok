@@ -2,14 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, useWatch } from 'react-hook-form';
-import { CameraOutlined, CloseOutlined } from '@ant-design/icons';
+import { useForm, Controller } from 'react-hook-form';
+import {
+  CameraOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
+import {
+  Modal,
+  Input,
+  Select,
+  Slider,
+  Button,
+  Avatar,
+  Typography,
+  Divider,
+  DatePicker,
+  Space,
+} from 'antd';
+import dayjs from 'dayjs';
 import { z } from 'zod';
 import { useAuthStore } from '@/stores';
 import { useLanguageStore, useTranslation } from '@/i18n';
 import * as http from '@/lib/http';
 import { appToast } from '@/lib/toast';
-import Portal from './Portal';
+
+const { Text } = Typography;
+const { TextArea } = Input;
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -81,10 +99,11 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
+
   const {
-    register,
-    handleSubmit,
     control,
+    handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -96,7 +115,8 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
       languageCode: user?.language?.code ?? 'vi',
     },
   });
-  const bio = useWatch({ control, name: 'bio' });
+
+  const bioValue = watch('bio');
 
   useEffect(
     () => () => {
@@ -156,7 +176,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
     },
   });
 
-  if (!isOpen || !user) return null;
+  if (!user) return null;
 
   const selectAvatar = (file?: File) => {
     if (!file) return;
@@ -184,123 +204,236 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
     }
   };
 
+  const isSaving = updateProfileMutation.isPending || isSubmitting;
+
+  const genderOptions = [
+    { value: 0, label: t('profile.genderOther') },
+    { value: 1, label: t('profile.genderMale') },
+    { value: 2, label: t('profile.genderFemale') },
+  ];
+
+  const languageOptions = [
+    { value: 'vi' as const, label: 'Tiếng Việt' },
+    { value: 'en' as const, label: 'English' },
+  ];
+
   return (
-    <Portal>
-      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
-        <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Close" />
-        <div className="relative z-10 max-h-[92vh] w-full max-w-[640px] overflow-y-auto rounded-2xl border border-border bg-bg-primary shadow-2xl">
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-divider bg-bg-primary px-6 py-4">
-            <h2 className="text-xl font-bold text-text-primary">{t('profile.edit')}</h2>
-            <button onClick={onClose} className="rounded-full p-2 hover:bg-bg-hover" aria-label="Close">
-              <CloseOutlined className="text-lg" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit(submitProfile)} className="space-y-6 p-6">
-            <section>
-              <label className="mb-3 block text-sm font-bold">{t('profile.avatar')}</label>
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="relative h-36 w-36 shrink-0 overflow-hidden rounded-full border-4 border-bg-secondary bg-bg-tertiary shadow-inner"
-                >
-                  {previewSource ? (
-                    <img
-                      src={previewSource}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      style={{
-                        transform: avatarFile
-                          ? `translate(${offsetX * -18}%, ${offsetY * -18}%) scale(${zoom})`
-                          : undefined,
-                      }}
-                    />
-                  ) : (
-                    <span className="flex h-full items-center justify-center text-4xl font-bold">
-                      {user.username[0].toUpperCase()}
-                    </span>
-                  )}
-                  <span className="absolute inset-x-0 bottom-0 bg-black/60 py-2 text-xs font-bold text-white">
-                    <span className="flex items-center justify-center gap-1.5">
-                      <CameraOutlined />
-                      {t('profile.chooseImage')}
-                    </span>
-                  </span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(event) => selectAvatar(event.target.files?.[0])}
-                />
-
-                <div className={`flex-1 space-y-3 ${avatarFile ? '' : 'opacity-50'}`}>
-                  {[
-                    [t('profile.zoom'), zoom, 1, 2.5, 0.05, setZoom],
-                    [t('profile.horizontal'), offsetX, -1, 1, 0.05, setOffsetX],
-                    [t('profile.vertical'), offsetY, -1, 1, 0.05, setOffsetY],
-                  ].map(([label, value, min, max, step, setter]) => (
-                    <label key={String(label)} className="block text-xs font-semibold text-text-secondary">
-                      {String(label)}
-                      <input
-                        type="range"
-                        disabled={!avatarFile}
-                        min={Number(min)}
-                        max={Number(max)}
-                        step={Number(step)}
-                        value={Number(value)}
-                        onChange={(event) => (setter as (value: number) => void)(Number(event.target.value))}
-                        className="mt-1 block w-full accent-primary"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="sm:col-span-2">
-                <span className="mb-1.5 block text-sm font-semibold">{t('profile.displayName')}</span>
-                <input {...register('displayName')} maxLength={100} className="w-full rounded-lg border border-border bg-bg-secondary px-4 py-3 outline-none focus:border-primary" />
-                {errors.displayName && <span className="mt-1 block text-xs text-error">{t('profile.requiredName')}</span>}
-              </label>
-              <label>
-                <span className="mb-1.5 block text-sm font-semibold">{t('profile.birthday')}</span>
-                <input type="date" {...register('dob')} className="w-full rounded-lg border border-border bg-bg-secondary px-4 py-3 outline-none focus:border-primary" />
-              </label>
-              <label>
-                <span className="mb-1.5 block text-sm font-semibold">{t('profile.gender')}</span>
-                <select {...register('gender', { valueAsNumber: true })} className="w-full rounded-lg border border-border bg-bg-secondary px-4 py-3 outline-none focus:border-primary">
-                  <option value={0}>{t('profile.genderOther')}</option>
-                  <option value={1}>{t('profile.genderMale')}</option>
-                  <option value={2}>{t('profile.genderFemale')}</option>
-                </select>
-              </label>
-              <label>
-                <span className="mb-1.5 block text-sm font-semibold">Language</span>
-                <select {...register('languageCode')} className="w-full rounded-lg border border-border bg-bg-secondary px-4 py-3 outline-none focus:border-primary">
-                  <option value="vi">Tiếng Việt</option>
-                  <option value="en">English</option>
-                </select>
-              </label>
-              <label className="sm:col-span-2">
-                <span className="mb-1.5 block text-sm font-semibold">{t('profile.bio')}</span>
-                <textarea {...register('bio')} maxLength={200} rows={4} className="w-full resize-none rounded-lg border border-border bg-bg-secondary px-4 py-3 outline-none focus:border-primary" />
-                <span className="block text-right text-xs text-text-tertiary">{bio.length}/200</span>
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-divider pt-5">
-              <button type="button" onClick={onClose} className="rounded-lg border border-border px-5 py-2.5 font-semibold hover:bg-bg-hover">{t('common.cancel')}</button>
-              <button type="submit" disabled={updateProfileMutation.isPending || isSubmitting} className="rounded-lg bg-primary px-6 py-2.5 font-bold text-white hover:bg-primary-hover disabled:opacity-50">
-                {updateProfileMutation.isPending || isSubmitting ? t('common.saving') : t('common.save')}
-              </button>
-            </div>
-          </form>
+    <Modal
+      open={isOpen}
+      onCancel={onClose}
+      title={<span className="text-lg font-bold">{t('profile.edit')}</span>}
+      width={620}
+      centered
+      destroyOnHidden
+      mask={{ closable: !isSaving }}
+      closable={!isSaving}
+      footer={
+        <div className="flex justify-end gap-3 pt-1">
+          <Button size="large" onClick={onClose} disabled={isSaving}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="primary"
+            size="large"
+            loading={isSaving}
+            onClick={handleSubmit(submitProfile)}
+          >
+            {isSaving ? t('common.saving') : t('common.save')}
+          </Button>
         </div>
-      </div>
-    </Portal>
+      }
+    >
+      <form className="space-y-5 pt-2">
+        {/* ── Avatar Section ── */}
+        <section>
+          <Text strong className="mb-3 block text-sm">
+            {t('profile.avatar')}
+          </Text>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            {/* Avatar preview + click-to-select */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="relative mx-auto h-[120px] w-[120px] shrink-0 overflow-hidden rounded-full border-4 border-gray-100 bg-gray-50 shadow-inner sm:mx-0 cursor-pointer"
+            >
+              {previewSource ? (
+                <img
+                  src={previewSource}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  style={{
+                    transform: avatarFile
+                      ? `translate(${offsetX * -18}%, ${offsetY * -18}%) scale(${zoom})`
+                      : undefined,
+                  }}
+                />
+              ) : (
+                <Avatar size={112} icon={<UserOutlined />} className="h-full w-full" />
+              )}
+              <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-black/55 py-1.5 text-[11px] font-bold text-white">
+                <CameraOutlined />
+                {t('profile.chooseImage')}
+              </span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(event) => selectAvatar(event.target.files?.[0])}
+            />
+
+            {/* Crop sliders */}
+            <div className={`flex-1 space-y-2 ${avatarFile ? '' : 'opacity-40 pointer-events-none'}`}>
+              <div>
+                <Text type="secondary" className="text-xs font-semibold">
+                  {t('profile.zoom')}
+                </Text>
+                <Slider
+                  min={1}
+                  max={2.5}
+                  step={0.05}
+                  value={zoom}
+                  onChange={setZoom}
+                  tooltip={{ formatter: (v) => `${((v ?? 1) * 100).toFixed(0)}%` }}
+                />
+              </div>
+              <div>
+                <Text type="secondary" className="text-xs font-semibold">
+                  {t('profile.horizontal')}
+                </Text>
+                <Slider
+                  min={-1}
+                  max={1}
+                  step={0.05}
+                  value={offsetX}
+                  onChange={setOffsetX}
+                />
+              </div>
+              <div>
+                <Text type="secondary" className="text-xs font-semibold">
+                  {t('profile.vertical')}
+                </Text>
+                <Slider
+                  min={-1}
+                  max={1}
+                  step={0.05}
+                  value={offsetY}
+                  onChange={setOffsetY}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <Divider className="my-1" />
+
+        {/* ── Display Name ── */}
+        <div>
+          <Text strong className="mb-1.5 block text-sm">
+            {t('profile.displayName')}
+          </Text>
+          <Controller
+            name="displayName"
+            control={control}
+            render={({ field }) => (
+              <Input
+                {...field}
+                size="large"
+                maxLength={100}
+                showCount
+                status={errors.displayName ? 'error' : undefined}
+                placeholder={t('profile.displayName')}
+              />
+            )}
+          />
+          {errors.displayName && (
+            <Text type="danger" className="mt-1 block text-xs">
+              {t('profile.requiredName')}
+            </Text>
+          )}
+        </div>
+
+        {/* ── Birthday + Gender row ── */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Text strong className="mb-1.5 block text-sm">
+              {t('profile.birthday')}
+            </Text>
+            <Controller
+              name="dob"
+              control={control}
+              render={({ field }) => (
+                <DatePicker
+                  size="large"
+                  className="w-full"
+                  value={field.value ? dayjs(field.value) : null}
+                  onChange={(date) => field.onChange(date ? date.format('YYYY-MM-DD') : '')}
+                  format="DD/MM/YYYY"
+                  placeholder="dd/mm/yyyy"
+                  allowClear
+                />
+              )}
+            />
+          </div>
+          <div>
+            <Text strong className="mb-1.5 block text-sm">
+              {t('profile.gender')}
+            </Text>
+            <Controller
+              name="gender"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  {...field}
+                  size="large"
+                  className="w-full"
+                  options={genderOptions}
+                />
+              )}
+            />
+          </div>
+        </div>
+
+        {/* ── Language ── */}
+        <div>
+          <Text strong className="mb-1.5 block text-sm">
+            Language
+          </Text>
+          <Controller
+            name="languageCode"
+            control={control}
+            render={({ field }) => (
+              <Select
+                {...field}
+                size="large"
+                className="w-full sm:w-60"
+                options={languageOptions}
+              />
+            )}
+          />
+        </div>
+
+        {/* ── Bio ── */}
+        <div>
+          <Text strong className="mb-1.5 block text-sm">
+            {t('profile.bio')}
+          </Text>
+          <Controller
+            name="bio"
+            control={control}
+            render={({ field }) => (
+              <TextArea
+                {...field}
+                rows={4}
+                maxLength={200}
+                showCount
+                placeholder={t('profile.bio')}
+              />
+            )}
+          />
+        </div>
+      </form>
+    </Modal>
   );
 }

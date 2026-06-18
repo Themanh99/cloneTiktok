@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Spin, Empty } from 'antd';
 import { useAuthStore, useAuthModalStore } from '@/stores';
 import * as http from '@/lib/http';
 import EditProfileModal from '@/components/EditProfileModal';
-import { useRef } from 'react';
 import { useTranslation } from '@/i18n';
 import { PageError, PageSkeleton } from '@/components/common/Feedback';
 
@@ -269,14 +269,11 @@ export default function ProfilePage() {
       {/* Videos Grid */}
       {isVideosLoading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-6 h-6 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <Spin size="large" />
         </div>
       ) : videos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-text-tertiary mb-3">
-            <path d="M24 4C12.95 4 4 12.95 4 24C4 35.05 12.95 44 24 44C35.05 44 44 35.05 44 24C44 12.95 35.05 4 24 4ZM24 38C16.28 38 10 31.72 10 24C10 16.28 16.28 10 24 10C31.72 10 38 16.28 38 24C38 31.72 31.72 38 24 38ZM22 18H26V22H22V18ZM22 26H26V32H22V26Z" fill="currentColor" />
-          </svg>
-          <p className="text-sm font-semibold text-text-secondary">{t('profile.noVideos')}</p>
+        <div className="flex flex-col items-center justify-center py-16">
+          <Empty description={t('profile.noVideos')} />
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">

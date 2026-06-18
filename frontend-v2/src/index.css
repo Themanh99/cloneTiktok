@@ -194,3 +194,14 @@
   }
 }
 
+/* ===== Ant Design Global Override =====
+ * antd v6 CSS-in-JS injects :where(.css-xxx) a { color: var(--ant-color-link) }
+ * at runtime. :where() has 0 specificity but is unlayered, so it beats our
+ * @layer base reset. Using `body a` (specificity 0,0,2) outside any @layer
+ * guarantees our color wins.
+ */
+body a {
+  color: inherit;
+  text-decoration: none;
+}
+
