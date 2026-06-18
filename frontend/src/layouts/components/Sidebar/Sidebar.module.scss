@@ -1,0 +1,88 @@
+.wrapper {
+  width: 345px;
+  min-height: 1000px;
+  padding: 20px 8px 26px 8px;
+  margin-left: -18px;
+  overflow-y: hidden;
+  overflow-x: hidden;
+  bottom: 0;
+  position: fixed;
+  top: 60px;
+  z-index: 99;
+  &:hover {
+    overflow-y: scroll;
+    width: 348px;
+  }
+}
+
+.wrapper::-webkit-scrollbar {
+  width: 3px;
+}
+
+.wrapper::-webkit-scrollbar-thumb {
+  color: var(--white);
+}
+
+.log-in {
+  border-top: 1px solid #e3e3e4;
+  width: 100%;
+  height: 156px;
+  justify-content: center;
+  display: flex;
+  flex-direction: column;
+
+  & > p {
+    font-size: 1.6rem;
+    color: rgba(22, 24, 35, 0.5);
+    line-height: 22px;
+    margin-bottom: 20px;
+  }
+}
+.btnlogin {
+  height: 48px;
+  color: var(--primary);
+  background-color: var(--white);
+  font-weight: 800;
+  font-size: 1.8rem;
+
+  &:hover {
+    background-color: rgba(254, 44, 85, 0.06);
+    color: var(--primary);
+  }
+}
+// Dialog login
+.divmodalcontainer {
+  position: fixed;
+  inset: 0px;
+  z-index: 1001;
+  overflow: auto;
+  outline: 0px;
+  transition: all 500ms cubic-bezier(0.075, 0.82, 0.165, 1) 0s;
+  display: flex;
+  opacity: 1;
+}
+
+.divmodalmask {
+  background: rgba(0, 0, 0, 0.5);
+  position: fixed;
+  inset: 0px;
+}
+
+// .scrollbar {
+//   height: 188.208px;
+//   transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1) scale(2.53975) translateZ(-1.53975px)
+//     translateZ(-2px);
+//   position: absolute;
+//   padding: 0 4px;
+//   top: 0;
+//   transition: opacity 0.5s;
+//   opacity: 0;
+//   right: 0;
+//   transform-origin: right top;
+// }
+// .scrollbar_thumb {
+//   width: 6px;
+//   height: 100%;
+//   border-radius: 3px;
+//   background: rgba(22, 24, 35, 0.06);
+// }

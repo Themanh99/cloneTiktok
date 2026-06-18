@@ -1,0 +1,40 @@
+.wrapper {
+    h1 {
+        font-size: 3.2rem;
+        margin: 16px 0;
+        text-align: center;
+    }
+}
+.form {
+    text-align: start;
+    flex: 1 1;
+    overflow-x: hidden;
+    overflow-y: overlay;
+    padding: 0 52px;
+    p {
+        font-weight: 600;
+    }
+    .form-input {
+        align-items: center;
+        // background-color: var(--background-gray-color-06);
+        // border: 1px solid var(--background-gray-color-12);
+        display: flex;
+        height: 44px;
+        margin-bottom: 9px;
+        input {
+            background-color: transparent;
+            caret-color: var(--primary);
+            color: inherit;
+            flex-grow: 1;
+            font-size: 1.6rem;
+            height: 100%;
+            padding-left: 12px;
+        }
+    }
+    .forgot-password {
+        // color: var(--text-gray-color);
+        cursor: pointer;
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
+}
