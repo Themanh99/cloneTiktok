@@ -55,9 +55,10 @@ export const useUser = (id: string) => {
 export const useUserSearch = (q: string) => {
   return useQuery({
     queryKey: userKeys.search(q),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       http.get<UserSearchResult>('/users/search', {
         params: { q, limit: 10 },
+        signal,
       }),
     enabled: q.length > 0,
   });

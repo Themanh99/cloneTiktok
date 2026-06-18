@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -14,7 +14,7 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsString()
-  avatarUrl?: string;
+  avatarFileKey?: string;
 
   @IsOptional()
   @IsDateString()
@@ -25,4 +25,8 @@ export class UpdateProfileDto {
   @Min(0)
   @Max(2)
   gender?: number;
+
+  @IsOptional()
+  @IsIn(['vi', 'en'])
+  languageCode?: 'vi' | 'en';
 }

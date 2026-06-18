@@ -62,6 +62,64 @@ describe('TikTokWeb API (e2e)', () => {
       .send({ email: authTestEmail, password: 'Test1234' })
       .expect(200);
 
+    const avatarPresignResponse = await request(app.getHttpServer())
+      .get('/api/users/me/avatar-presigned-url?contentType=image%2Fwebp')
+      .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+      .expect(200);
+
+    expect(avatarPresignResponse.body.uploadUrl).toBeTruthy();
+    expect(avatarPresignResponse.body.fileKey).toContain('avatars/');
+
+    const searchResponse = await request(app.getHttpServer())
+      .get('/api/search?q=Auth&limit=5')
+      .expect(200);
+
+    expect(Array.isArray(searchResponse.body.users)).toBe(true);
+    expect(Array.isArray(searchResponse.body.videos)).toBe(true);
+
+    const feedResponse = await request(app.getHttpServer())
+      .get('/api/videos/feed?limit=1')
+      .expect(200);
+    const videoId = feedResponse.body.data[0]?.id;
+
+    if (videoId) {
+      const rootComment = await request(app.getHttpServer())
+        .post(`/api/videos/${videoId}/comments`)
+        .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+        .send({ content: 'Root E2E comment' })
+        .expect(201);
+
+      const childComment = await request(app.getHttpServer())
+        .post(`/api/videos/${videoId}/comments`)
+        .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+        .send({
+          content: 'Child E2E comment',
+          parentId: rootComment.body.id,
+        })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/videos/${videoId}/comments`)
+        .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+        .send({
+          content: 'Nested E2E comment',
+          parentId: childComment.body.id,
+        })
+        .expect(201);
+
+      const repliesResponse = await request(app.getHttpServer())
+        .get(`/api/comments/${rootComment.body.id}/replies?limit=100`)
+        .expect(200);
+
+      expect(repliesResponse.body.data[0].id).toBe(childComment.body.id);
+      expect(repliesResponse.body.data[0].replies).toHaveLength(1);
+
+      await request(app.getHttpServer())
+        .delete(`/api/comments/${rootComment.body.id}`)
+        .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+        .expect(200);
+    }
+
     const refreshResponse = await request(app.getHttpServer())
       .post('/api/auth/refresh')
       .send({ refreshToken: loginResponse.body.refreshToken })

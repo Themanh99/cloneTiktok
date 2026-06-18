@@ -61,6 +61,7 @@ export class AuthService {
         username: dto.username,
         displayName: dto.displayName,
         provider: 'LOCAL',
+        language: { connect: { code: 'vi' } },
       },
     });
 
@@ -68,7 +69,7 @@ export class AuthService {
 
     await this.saveRefreshToken(user.id, tokens.refreshToken);
     return {
-      user: this.sanitizeUser(user),
+      user: await this.getSessionUser(user.id),
       ...tokens,
     };
   }
@@ -111,7 +112,7 @@ export class AuthService {
 
     await this.saveRefreshToken(user.id, tokens.refreshToken);
     return {
-      user: this.sanitizeUser(user),
+      user: await this.getSessionUser(user.id),
       ...tokens,
     };
   }
@@ -199,6 +200,7 @@ export class AuthService {
           providerId: googleUser.sub,
           username: this.generateUsername(googleUser.name),
           isVerified: googleUser.email_verified || false,
+          language: { connect: { code: 'vi' } },
         },
       });
     } else if (user.provider === 'LOCAL') {
@@ -219,7 +221,7 @@ export class AuthService {
     await this.saveRefreshToken(user.id, tokens.refreshToken);
 
     return {
-      user: this.sanitizeUser(user),
+      user: await this.getSessionUser(user.id),
       ...tokens,
     };
   }
@@ -258,10 +260,22 @@ export class AuthService {
     });
   }
 
-  // Strip sensitive fields before returning to client
-  private sanitizeUser(user: any) {
-    const { password, providerId, ...sanitized } = user;
-    return sanitized;
+  private getSessionUser(userId: string) {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        bio: true,
+        dob: true,
+        gender: true,
+        isVerified: true,
+        language: { select: { code: true, name: true } },
+      },
+    });
   }
 
   // Generate username from Google name (add random suffix to avoid duplicates)

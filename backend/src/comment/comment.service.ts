@@ -11,6 +11,7 @@ import { PaginationDto } from '../common/dtos/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { Prisma } from '@prisma/client';
 
 const commentInclude = {
   author: {
@@ -83,7 +84,12 @@ export class CommentService {
       return created;
     });
 
-    return { ...comment, messageCode: MessageCode.COMMENT_CREATED };
+    return {
+      ...comment,
+      replyCount: comment._count.replies,
+      replies: [],
+      messageCode: MessageCode.COMMENT_CREATED,
+    };
   }
 
   getComments(videoId: string, pagination: PaginationDto) {
@@ -101,7 +107,48 @@ export class CommentService {
         messageCode: MessageCode.COMMENT_NOT_FOUND,
       });
     }
-    return this.findComments({ parentId: commentId }, pagination);
+    const maxItems = Math.min(pagination.limit || 50, 100);
+    const collected: Prisma.CommentGetPayload<{ include: typeof commentInclude }>[] = [];
+    let parentIds = [commentId];
+
+    while (parentIds.length > 0 && collected.length < maxItems) {
+      const level = await this.prisma.comment.findMany({
+        where: { parentId: { in: parentIds } },
+        orderBy: { createdAt: 'asc' },
+        include: commentInclude,
+      });
+      if (level.length === 0) break;
+      collected.push(...level);
+      parentIds = level.map((comment) => comment.id);
+    }
+
+    const nodes = new Map<
+      string,
+      Prisma.CommentGetPayload<{ include: typeof commentInclude }> & {
+        replyCount: number;
+        replies: unknown[];
+      }
+    >();
+
+    for (const comment of collected.slice(0, maxItems)) {
+      nodes.set(comment.id, {
+        ...comment,
+        replyCount: comment._count.replies,
+        replies: [],
+      });
+    }
+
+    const roots: Array<(typeof nodes extends Map<string, infer T> ? T : never)> = [];
+    for (const node of nodes.values()) {
+      if (node.parentId === commentId) {
+        roots.push(node);
+        continue;
+      }
+      const parentNode = node.parentId ? nodes.get(node.parentId) : undefined;
+      if (parentNode) parentNode.replies.push(node);
+    }
+
+    return { data: roots, nextCursor: null };
   }
 
   async deleteComment(userId: string, commentId: string) {
@@ -122,9 +169,7 @@ export class CommentService {
       });
     }
 
-    const deletedCount = await this.prisma.comment.count({
-      where: { OR: [{ id: commentId }, { parentId: commentId }] },
-    });
+    const deletedCount = await this.countCommentTree(commentId);
     await this.prisma.$transaction([
       this.prisma.comment.delete({ where: { id: commentId } }),
       this.prisma.video.update({
@@ -151,9 +196,29 @@ export class CommentService {
       include: commentInclude,
     });
     return {
-      data: comments,
+      data: comments.map((comment) => ({
+        ...comment,
+        replyCount: comment._count.replies,
+        replies: [],
+      })),
       nextCursor: comments.length === limit ? comments[comments.length - 1].id : null,
     };
+  }
+
+  private async countCommentTree(commentId: string) {
+    let count = 1;
+    let parentIds = [commentId];
+
+    while (parentIds.length > 0) {
+      const children = await this.prisma.comment.findMany({
+        where: { parentId: { in: parentIds } },
+        select: { id: true },
+      });
+      count += children.length;
+      parentIds = children.map((child) => child.id);
+    }
+
+    return count;
   }
 
   private async enforceRateLimit(userId: string) {

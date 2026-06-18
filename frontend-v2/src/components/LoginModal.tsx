@@ -1,5 +1,7 @@
 import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import { useAuthStore, useAuthModalStore } from '@/stores';
+import Portal from './Portal';
+import { useTranslation } from '@/i18n';
 
 const CloseIcon = () => (
   <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -39,11 +41,11 @@ export default function LoginModal() {
 
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (isOpen) {
       clearError();
-      setSubmitError('');
     }
   }, [isOpen, mode, clearError]);
 
@@ -120,6 +122,7 @@ export default function LoginModal() {
   const displayError = submitError || error;
 
   return (
+    <Portal>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
       {/* Background Mask */}
       <div className="absolute inset-0 cursor-pointer" onClick={closeModal} />
@@ -141,12 +144,12 @@ export default function LoginModal() {
         <div className="flex-1 overflow-y-auto px-10 py-8">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-extrabold text-text-primary mb-2">
-              {isLogin ? 'Đăng nhập vào TikTok' : 'Đăng ký tài khoản'}
+              {isLogin ? t('auth.loginTitle') : t('auth.signupTitle')}
             </h2>
             <p className="text-sm text-text-secondary">
               {isLogin
-                ? 'Tiếp tục xem, chia sẻ và kết nối với mọi người.'
-                : 'Tạo tài khoản để đăng tải video và theo dõi nhà sáng tạo.'}
+                ? t('auth.loginDescription')
+                : t('auth.signupDescription')}
             </p>
           </div>
 
@@ -155,13 +158,13 @@ export default function LoginModal() {
               <>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">
-                    Tên hiển thị
+                    {t('auth.displayName')}
                   </label>
                   <input
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Tên của bạn"
+                    placeholder={t('auth.displayNamePlaceholder')}
                     required
                     className="w-full h-11 px-4 border border-border rounded bg-bg-secondary text-sm text-text-primary placeholder:text-text-placeholder focus:bg-bg-primary focus:border-text-primary outline-none transition-colors"
                   />
@@ -169,7 +172,7 @@ export default function LoginModal() {
 
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">
-                    Tên người dùng (username)
+                    {t('auth.username')}
                   </label>
                   <input
                     type="text"
@@ -181,7 +184,7 @@ export default function LoginModal() {
                     pattern="[a-zA-Z0-9._]+"
                     className="w-full h-11 px-4 border border-border rounded bg-bg-secondary text-sm text-text-primary placeholder:text-text-placeholder focus:bg-bg-primary focus:border-text-primary outline-none transition-colors"
                   />
-                  <p className="text-[11px] text-text-tertiary mt-1">Chỉ sử dụng chữ cái, số, dấu chấm hoặc dấu gạch dưới.</p>
+                  <p className="text-[11px] text-text-tertiary mt-1">{t('auth.usernameHint')}</p>
                 </div>
               </>
             )}
@@ -202,14 +205,14 @@ export default function LoginModal() {
 
             <div>
               <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">
-                Mật khẩu
+                {t('auth.password')}
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isLogin ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 8 ký tự'}
+                  placeholder={isLogin ? t('auth.passwordPlaceholder') : t('auth.passwordCreatePlaceholder')}
                   required
                   minLength={isLogin ? 1 : 8}
                   className="w-full h-11 pl-4 pr-12 border border-border rounded bg-bg-secondary text-sm text-text-primary placeholder:text-text-placeholder focus:bg-bg-primary focus:border-text-primary outline-none transition-colors"
@@ -238,9 +241,9 @@ export default function LoginModal() {
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : isLogin ? (
-                'Đăng nhập'
+                t('auth.login')
               ) : (
-                'Đăng ký tài khoản'
+                t('auth.signup')
               )}
             </button>
           </form>
@@ -249,7 +252,7 @@ export default function LoginModal() {
           <div className="relative my-6 flex items-center">
             <div className="flex-grow border-t border-divider" />
             <span className="flex-shrink mx-4 text-xs text-text-tertiary font-bold uppercase tracking-wider bg-bg-primary">
-              Hoặc tiếp tục với
+              {t('auth.orGoogle')}
             </span>
             <div className="flex-grow border-t border-divider" />
           </div>
@@ -272,15 +275,16 @@ export default function LoginModal() {
 
         {/* Modal Switch mode footer */}
         <div className="bg-bg-secondary border-t border-divider px-10 py-4 flex items-center justify-center gap-2 text-sm text-text-primary font-medium">
-          <span>{isLogin ? 'Bạn không có tài khoản?' : 'Bạn đã có tài khoản?'}</span>
+          <span>{isLogin ? t('auth.switchSignup') : t('auth.switchLogin')}</span>
           <button
             onClick={() => setMode(isLogin ? 'signup' : 'login')}
             className="text-primary hover:underline font-bold cursor-pointer"
           >
-            {isLogin ? 'Đăng ký' : 'Đăng nhập'}
+            {isLogin ? t('auth.signup') : t('auth.login')}
           </button>
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

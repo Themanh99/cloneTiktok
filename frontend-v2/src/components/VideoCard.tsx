@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuthStore, useAuthModalStore, useVideoPlayerStore } from '@/stores';
 import { useLikeVideo, useBookmarkVideo, useFollowUser } from '@/hooks/use-interactions';
+import { useTranslation } from '@/i18n';
 
 // Icons
 const HeartIcon = ({ liked }: { liked?: boolean }) => (
@@ -85,6 +86,7 @@ interface VideoCardProps {
 }
 
 export default function VideoCard({ video, active, onCommentsClick }: VideoCardProps) {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const openModal = useAuthModalStore((s) => s.openModal);
   
@@ -109,6 +111,8 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
 
   // Sync state on video prop changes
   useEffect(() => {
+    // State mirrors a new feed item when React reuses this card instance.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLiked(video.is_liked || false);
     setIsBookmarked(video.is_bookmarked || false);
     setIsFollowing(video.user.is_followed || false);
@@ -127,6 +131,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         .catch(() => setIsPlaying(false));
     } else {
       videoEl.pause();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsPlaying(false);
     }
   }, [active]);
@@ -434,7 +439,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
             <ShareIcon />
           </button>
           <span className="text-xs text-text-secondary font-bold mt-1.5 block">
-            Chia sẻ
+            {t('misc.share')}
           </span>
         </div>
       </div>

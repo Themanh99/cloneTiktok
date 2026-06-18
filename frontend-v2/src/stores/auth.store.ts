@@ -1,8 +1,8 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { subscribeWithSelector } from 'zustand/middleware';
-import * as http from '@/lib/http';
-import type { AxiosError } from 'axios';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { subscribeWithSelector } from "zustand/middleware";
+import * as http from "@/lib/http";
+import type { AxiosError } from "axios";
 
 // ===== Types =====
 
@@ -14,6 +14,9 @@ export interface User {
   avatarUrl?: string | null;
   isVerified?: boolean;
   bio?: string | null;
+  dob?: string | null;
+  gender?: number | null;
+  language?: { code: 'vi' | 'en'; name: string } | null;
 }
 
 export interface AuthSession {
@@ -54,14 +57,13 @@ const getAuthError = (error: unknown): string => {
   if (error instanceof Error) {
     const axiosError = error as AxiosError<{ message?: string | string[] }>;
     const message = axiosError.response?.data?.message;
-    if (Array.isArray(message)) return message.join('. ');
-    if (typeof message === 'string') return message;
-    if (axiosError.code === 'ECONNABORTED')
-      return 'Request timeout. Check if backend is running.';
-    if (!axiosError.response)
-      return 'Cannot connect to backend at localhost:3000.';
+    if (Array.isArray(message)) return message.join(". ");
+    if (typeof message === "string") return message;
+    if (axiosError.code === "ECONNABORTED")
+      return "Request timeout. Check if backend is running.";
+    if (!axiosError.response) return "Cannot connect to backend";
   }
-  return 'Authentication failed. Please try again.';
+  return "Authentication failed. Please try again.";
 };
 
 const persistSession = (session: AuthSession) => {
@@ -85,13 +87,13 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: true, error: null });
           try {
             const session = persistSession(
-              await http.post<AuthSession>('/auth/login', { email, password }),
+              await http.post<AuthSession>("/auth/login", { email, password }),
             );
             set({ user: session.user, isLoading: false });
           } catch (error) {
             const message = getAuthError(error);
             set({ isLoading: false, error: message });
-            throw new Error(message);
+            throw Object.assign(new Error(message), { cause: error });
           }
         },
 
@@ -99,13 +101,13 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: true, error: null });
           try {
             const session = persistSession(
-              await http.post<AuthSession>('/auth/google', { idToken }),
+              await http.post<AuthSession>("/auth/google", { idToken }),
             );
             set({ user: session.user, isLoading: false });
           } catch (error) {
             const message = getAuthError(error);
             set({ isLoading: false, error: message });
-            throw new Error(message);
+            throw Object.assign(new Error(message), { cause: error });
           }
         },
 
@@ -113,13 +115,13 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: true, error: null });
           try {
             const session = persistSession(
-              await http.post<AuthSession>('/auth/register', payload),
+              await http.post<AuthSession>("/auth/register", payload),
             );
             set({ user: session.user, isLoading: false });
           } catch (error) {
             const message = getAuthError(error);
             set({ isLoading: false, error: message });
-            throw new Error(message);
+            throw Object.assign(new Error(message), { cause: error });
           }
         },
 
@@ -127,7 +129,7 @@ export const useAuthStore = create<AuthStore>()(
           const refreshToken = http.getRefreshToken();
           try {
             if (refreshToken) {
-              await http.post('/auth/logout', { refreshToken });
+              await http.post("/auth/logout", { refreshToken });
             }
           } catch {
             // Ignore logout API errors
@@ -141,7 +143,7 @@ export const useAuthStore = create<AuthStore>()(
         clearError: () => set({ error: null }),
       }),
       {
-        name: 'tiktok-auth',
+        name: "tiktok-auth",
         partialize: (state) => ({ user: state.user }),
       },
     ),

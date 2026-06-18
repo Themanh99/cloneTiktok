@@ -9,8 +9,6 @@ async function main() {
     data: [
       { code: 'vi', name: 'Vietnamese' },
       { code: 'en', name: 'English' },
-      { code: 'jp', name: 'Japanese' },
-      { code: 'ko', name: 'Korean' },
     ],
     skipDuplicates: true,
   });
@@ -32,6 +30,16 @@ async function main() {
         key: 'maintenance_mode',
         value: 'false',
         description: 'Enable/disable maintenance mode',
+      },
+      {
+        key: 'default_language',
+        value: 'vi',
+        description: 'Default application language',
+      },
+      {
+        key: 'supported_languages',
+        value: '["vi","en"]',
+        description: 'Languages enabled for the application',
       },
     ],
     skipDuplicates: true,

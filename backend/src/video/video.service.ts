@@ -164,6 +164,40 @@ export class VideoService {
     return this.toPaginatedVideoResponse(videos, limit, userId);
   }
 
+  async searchVideos(query: string, pagination: PaginationDto, userId?: string) {
+    const normalizedQuery = query.trim().replace(/^#/, '');
+    if (!normalizedQuery) return { data: [], nextCursor: null };
+    const { cursor, limit = 12 } = pagination;
+    const videos = await this.prisma.video.findMany({
+      where: {
+        visibility: VideoVisibility.PUBLIC,
+        OR: [
+          { title: { contains: normalizedQuery, mode: 'insensitive' } },
+          {
+            hashtags: {
+              some: {
+                hashtag: { name: { contains: normalizedQuery, mode: 'insensitive' } },
+              },
+            },
+          },
+          {
+            author: {
+              OR: [
+                { username: { contains: normalizedQuery, mode: 'insensitive' } },
+                { displayName: { contains: normalizedQuery, mode: 'insensitive' } },
+              ],
+            },
+          },
+        ],
+      },
+      take: limit,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: [{ viewCount: 'desc' }, { createdAt: 'desc' }],
+      include: videoInclude,
+    });
+    return this.toPaginatedVideoResponse(videos, limit, userId);
+  }
+
   async getVideoById(videoId: string, userId?: string) {
     const video = await this.prisma.video.findUnique({
       where: { id: videoId },

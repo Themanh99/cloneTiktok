@@ -46,6 +46,14 @@ export class StorageService {
     return `https://${bucket}.s3.${region}.amazonaws.com/${fileKey}`;
   }
 
+  getFileKeyFromPublicUrl(url?: string | null): string | null {
+    if (!url) return null;
+    const publicBaseUrl = this.configService.get<string>('AWS_S3_PUBLIC_URL');
+    if (!publicBaseUrl) return null;
+    const prefix = `${publicBaseUrl.replace(/\/$/, '')}/`;
+    return url.startsWith(prefix) ? decodeURIComponent(url.slice(prefix.length)) : null;
+  }
+
   async deleteFile(fileKey: string): Promise<void> {
     const s3Client = this.getS3Client();
     await s3Client.send(

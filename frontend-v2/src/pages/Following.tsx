@@ -1,9 +1,12 @@
+import { useTranslation } from '@/i18n';
+
 export default function FollowingPage() {
+  const { t } = useTranslation();
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="flex h-[calc(100vh-108px)] items-center justify-center">
       <div className="text-center animate-fade-in">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">Đã follow</h1>
-        <p className="text-text-secondary text-base">Following feed — Phase 7</p>
+        <h1 className="mb-2 text-3xl font-bold text-text-primary">{t('sidebar.following')}</h1>
+        <p className="text-base text-text-secondary">{t('misc.comingSoon')}</p>
       </div>
     </div>
   );

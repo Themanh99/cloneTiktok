@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { routes } from '@/config';
 import { useAuthStore, useAuthModalStore, useThemeStore } from '@/stores';
 import * as http from '@/lib/http';
+import Portal from '@/components/Portal';
+import { useTranslation, type LanguageCode } from '@/i18n';
 
 // ===== Sidebar Icons =====
 
@@ -94,11 +96,15 @@ export default function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const openModal = useAuthModalStore((s) => s.openModal);
   const logout = useAuthStore((s) => s.logout);
+  const setUser = useAuthStore((s) => s.setUser);
   const { theme, toggleTheme } = useThemeStore();
+  const { language, setLanguage, t } = useTranslation();
   const navigate = useNavigate();
 
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const [morePosition, setMorePosition] = useState({ left: 16, bottom: 16 });
 
   // Dynamically fetch followed accounts from backend API using react-query
   // If not logged in, fetch for target user "the.manh99" to display beautiful sidebar content
@@ -113,7 +119,11 @@ export default function Sidebar() {
   // Close popover when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node) &&
+        !moreButtonRef.current?.contains(event.target as Node)
+      ) {
         setIsMoreOpen(false);
       }
     }
@@ -130,15 +140,36 @@ export default function Sidebar() {
     }
   };
 
+  const toggleMore = () => {
+    const rect = moreButtonRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMorePosition({
+        left: Math.max(12, rect.left + 8),
+        bottom: Math.max(12, window.innerHeight - rect.top + 8),
+      });
+    }
+    setIsMoreOpen((open) => !open);
+  };
+
+  const changeLanguage = async (nextLanguage: LanguageCode) => {
+    setLanguage(nextLanguage);
+    if (user) {
+      const updatedUser = await http.patch<typeof user>('/users/me', {
+        languageCode: nextLanguage,
+      });
+      setUser(updatedUser);
+    }
+  };
+
   const navItems = [
-    { path: routes.home, label: 'Đề xuất', icon: HomeIcon },
-    { path: routes.explore, label: 'Khám phá', icon: ExploreIcon },
-    { path: routes.following, label: 'Đã follow', icon: FollowingIcon },
-    { path: '/friends', label: 'Bạn bè', icon: FriendsIcon },
+    { path: routes.home, label: t('sidebar.forYou'), icon: HomeIcon },
+    { path: routes.explore, label: t('sidebar.explore'), icon: ExploreIcon },
+    { path: routes.following, label: t('sidebar.following'), icon: FollowingIcon },
+    { path: '/friends', label: t('sidebar.friends'), icon: FriendsIcon },
     { path: routes.live, label: 'LIVE', icon: LiveIcon },
-    { path: '/messages', label: 'Tin nhắn', icon: MessagesIcon },
-    { path: '/activity', label: 'Hoạt động', icon: ActivityIcon },
-    { path: '/upload', label: 'Tải lên', icon: UploadIcon },
+    { path: '/messages', label: t('sidebar.messages'), icon: MessagesIcon },
+    { path: '/activity', label: t('sidebar.activity'), icon: ActivityIcon },
+    { path: '/upload', label: t('sidebar.upload'), icon: UploadIcon },
   ];
 
   return (
@@ -196,38 +227,58 @@ export default function Sidebar() {
               ) : (
                 <ProfileIcon active={isActive && !!user} />
               )}
-              <span className="hidden sm:inline">Hồ sơ</span>
+              <span className="hidden sm:inline">{t('sidebar.profile')}</span>
             </>
           )}
         </NavLink>
 
         {/* More popover button */}
-        <div className="relative" ref={popoverRef}>
+        <div className="relative">
           <button
-            onClick={() => setIsMoreOpen(!isMoreOpen)}
+            ref={moreButtonRef}
+            onClick={toggleMore}
             className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-md font-bold transition-colors duration-150 ${
               isMoreOpen ? 'bg-bg-hover text-primary' : 'text-text-primary hover:bg-bg-hover'
             }`}
           >
             <MoreIcon active={isMoreOpen} />
-            <span className="hidden sm:inline">Thêm</span>
+            <span className="hidden sm:inline">{t('sidebar.more')}</span>
           </button>
 
           {/* More Popover Menu */}
           {isMoreOpen && (
-            <div className="absolute left-2 bottom-full mb-2 w-64 bg-bg-primary rounded-xl shadow-xl border border-border py-2 z-50 animate-slide-up">
+            <Portal>
+            <div
+              ref={popoverRef}
+              style={{ left: morePosition.left, bottom: morePosition.bottom }}
+              className="fixed w-64 bg-bg-primary rounded-xl shadow-xl border border-border py-2 z-[100] animate-slide-up"
+            >
               {/* Settings Zone */}
               <div className="px-2 pb-2 border-b border-divider">
-                <p className="px-3 py-1.5 text-xs font-semibold text-text-tertiary uppercase tracking-wider">Cài đặt</p>
+                <p className="px-3 py-1.5 text-xs font-semibold text-text-tertiary uppercase tracking-wider">{t('sidebar.settings')}</p>
                 <div className="flex items-center justify-between px-3 py-2 text-sm text-text-primary font-medium hover:bg-bg-hover rounded-lg cursor-pointer">
-                  <span>Chung</span>
+                  <span>{t('sidebar.general')}</span>
                 </div>
-                <div className="flex items-center justify-between px-3 py-2 text-sm text-text-primary font-medium hover:bg-bg-hover rounded-lg cursor-pointer">
-                  <span>Tiếng Việt</span>
-                  <span className="text-xs text-text-secondary">Tiếng Việt</span>
+                <div className="px-3 py-2 text-sm text-text-primary font-medium">
+                  <span className="block mb-2">{t('sidebar.language')}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['vi', 'en'] as const).map((code) => (
+                      <button
+                        key={code}
+                        onClick={() => void changeLanguage(code)}
+                        className={`rounded-md px-3 py-2 text-xs font-bold ${
+                          language === code
+                            ? 'bg-primary text-white'
+                            : 'bg-bg-secondary hover:bg-bg-hover'
+                        }`}
+                      >
+                        {code === 'vi' ? 'Tiếng Việt' : 'English'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between px-3 py-2 text-sm text-text-primary font-medium rounded-lg">
-                  <span>Chế độ tối</span>
+                  <span>{t('sidebar.darkMode')}</span>
                   <button
                     onClick={() => toggleTheme()}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${
@@ -245,9 +296,9 @@ export default function Sidebar() {
 
               {/* Other Zone */}
               <div className="px-2 pt-2">
-                <p className="px-3 py-1.5 text-xs font-semibold text-text-tertiary uppercase tracking-wider">Khác</p>
+                <p className="px-3 py-1.5 text-xs font-semibold text-text-tertiary uppercase tracking-wider">{t('sidebar.other')}</p>
                 <div className="px-3 py-2 text-sm text-text-primary font-medium hover:bg-bg-hover rounded-lg cursor-pointer">
-                  Hỗ trợ
+                  {t('sidebar.support')}
                 </div>
                 {user && (
                   <button
@@ -258,11 +309,12 @@ export default function Sidebar() {
                     }}
                     className="w-full text-left px-3 py-2 text-sm text-error font-medium hover:bg-bg-hover rounded-lg cursor-pointer"
                   >
-                    Đăng xuất
+                    {t('header.logout')}
                   </button>
                 )}
               </div>
             </div>
+            </Portal>
           )}
         </div>
       </nav>
@@ -270,7 +322,7 @@ export default function Sidebar() {
       {/* Followed accounts section */}
       {followedAccounts.length > 0 && (
         <div className="pt-4 border-t border-divider px-3 mt-4">
-          <p className="text-xs font-semibold text-text-secondary mb-2 px-2">Các tài khoản đã follow</p>
+          <p className="text-xs font-semibold text-text-secondary mb-2 px-2">{t('sidebar.followedAccounts')}</p>
           <div className="space-y-1">
             {followedAccounts.slice(0, 5).map((acc) => (
               <NavLink
@@ -294,7 +346,7 @@ export default function Sidebar() {
             ))}
           </div>
           {followedAccounts.length > 5 && (
-            <button className="text-xs font-bold text-primary mt-2 px-2 hover:underline text-left">Xem tất cả</button>
+            <button className="text-xs font-bold text-primary mt-2 px-2 hover:underline text-left">{t('sidebar.seeAll')}</button>
           )}
         </div>
       )}
@@ -303,13 +355,13 @@ export default function Sidebar() {
       {!user && (
         <div className="mx-4 my-4 p-4 border border-divider rounded-lg bg-bg-secondary text-left mt-auto">
           <p className="text-sm text-text-secondary mb-4 leading-normal font-medium">
-            Đăng nhập để follow các nhà sáng tạo, thích video và xem bình luận.
+            {t('sidebar.guestPrompt')}
           </p>
           <button
             onClick={() => openModal('login')}
             className="w-full py-2.5 rounded-md border border-primary text-primary font-bold text-sm hover:bg-primary-light transition-colors duration-200"
           >
-            Đăng nhập
+            {t('header.login')}
           </button>
         </div>
       )}
@@ -317,10 +369,10 @@ export default function Sidebar() {
       {/* Footer links */}
       <div className="px-5 py-4 border-t border-divider mt-auto">
         <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-text-tertiary font-medium">
-          <a href="#" className="hover:underline">Giới thiệu</a>
-          <a href="#" className="hover:underline">Liên hệ</a>
-          <a href="#" className="hover:underline">Báo cáo</a>
-          <a href="#" className="hover:underline">Điều khoản</a>
+          <a href="#" className="hover:underline">{t('sidebar.about')}</a>
+          <a href="#" className="hover:underline">{t('sidebar.contact')}</a>
+          <a href="#" className="hover:underline">{t('sidebar.report')}</a>
+          <a href="#" className="hover:underline">{t('sidebar.terms')}</a>
         </div>
         <p className="text-[11px] text-text-tertiary mt-3 font-semibold">© 2026 TikTok Clone</p>
       </div>

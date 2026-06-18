@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { PaginationDto } from '../common/dtos/pagination.dto';
 import { GetUserVideosDto } from './dto/get-user-videos.dto';
+import { AvatarUploadQueryDto } from './dto/avatar-upload-query.dto';
 
 @Controller('users')
 export class UserController {
@@ -23,6 +24,15 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   updateProfile(@CurrentUser('id') userId: string, @Body() dto: UpdateProfileDto) {
     return this.userService.updateProfile(userId, dto);
+  }
+
+  @Get('me/avatar-presigned-url')
+  @UseGuards(JwtAuthGuard)
+  getAvatarPresignedUrl(
+    @CurrentUser('id') userId: string,
+    @Query() query: AvatarUploadQueryDto,
+  ) {
+    return this.userService.getAvatarPresignedUrl(userId, query.contentType);
   }
 
   // GET /api/users/search?q=keyword

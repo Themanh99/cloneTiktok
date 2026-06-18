@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuthStore } from '@/stores';
 import * as http from '@/lib/http';
+import { useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from '@/i18n';
 
 export default function UploadPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   // Form states
   const [file, setFile] = useState<File | null>(null);
@@ -55,21 +59,21 @@ export default function UploadPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[80vh] text-center p-6">
         <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-        <h2 className="text-xl font-bold text-text-primary mb-2">Yêu cầu đăng nhập</h2>
-        <p className="text-text-secondary">Vui lòng đăng nhập để thực hiện tải video lên. Đang chuyển hướng...</p>
+        <h2 className="text-xl font-bold text-text-primary mb-2">{t('upload.authRequired')}</h2>
+        <p className="text-text-secondary">{t('upload.authDescription')}</p>
       </div>
     );
   }
 
   const handleFileChange = (selectedFile: File) => {
     if (!selectedFile.type.startsWith('video/')) {
-      setErrorMessage('Vui lòng chỉ tải lên tệp video (mp4, webm, v.v.).');
+      setErrorMessage(t('upload.invalidFile'));
       setUploadStatus('error');
       return;
     }
 
     if (selectedFile.size > 100 * 1024 * 1024) {
-      setErrorMessage('Dung lượng video vượt quá giới hạn 100MB.');
+      setErrorMessage(t('upload.tooLarge'));
       setUploadStatus('error');
       return;
     }
@@ -180,14 +184,23 @@ export default function UploadPage() {
         allowDownload,
       });
 
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['profile-videos', user.username] }),
+        queryClient.invalidateQueries({ queryKey: ['videos'] }),
+        queryClient.invalidateQueries({ queryKey: ['profile', user.username] }),
+      ]);
       setUploadStatus('success');
       setTimeout(() => {
         navigate(`/@${user.username}`);
       }, 1500);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi tải video lên:', err);
-      const errText = err.response?.data?.message || err.message || 'Có lỗi xảy ra trong quá trình tải lên.';
+      const errText = axios.isAxiosError(err)
+        ? err.response?.data?.message || err.message
+        : err instanceof Error
+          ? err.message
+          : t('upload.failed');
       setErrorMessage(Array.isArray(errText) ? errText.join(', ') : errText);
       setUploadStatus('error');
     } finally {
@@ -199,8 +212,8 @@ export default function UploadPage() {
     <div className="max-w-[1080px] mx-auto py-8 px-4 min-h-[90vh]">
       <div className="bg-bg-secondary border border-border rounded-xl p-8 shadow-xl">
         <div className="mb-6">
-          <h1 className="text-2xl font-black text-text-primary">Tải video lên</h1>
-          <p className="text-text-secondary text-sm mt-1">Đăng video lên tài khoản của bạn</p>
+          <h1 className="text-2xl font-black text-text-primary">{t('upload.title')}</h1>
+          <p className="text-text-secondary text-sm mt-1">{t('upload.subtitle')}</p>
         </div>
 
         {uploadStatus === 'success' && (
@@ -209,7 +222,7 @@ export default function UploadPage() {
               <circle cx="24" cy="24" r="20" fill="currentColor" className="opacity-20" />
               <path d="M16 24L22 30L32 18" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span className="font-bold">Đăng video thành công! Đang chuyển hướng về trang cá nhân...</span>
+            <span className="font-bold">{t('upload.success')}</span>
           </div>
         )}
 
@@ -255,20 +268,20 @@ export default function UploadPage() {
                   </svg>
                 </div>
                 
-                <h3 className="text-base font-bold text-text-primary mb-1.5">Chọn video để tải lên</h3>
-                <p className="text-text-secondary text-xs mb-4">Hoặc kéo và thả tệp của bạn tại đây</p>
+                <h3 className="text-base font-bold text-text-primary mb-1.5">{t('upload.choose')}</h3>
+                <p className="text-text-secondary text-xs mb-4">{t('upload.drop')}</p>
                 
                 <div className="text-left text-xxs text-text-secondary space-y-1 bg-bg-primary/50 p-3 rounded-lg w-full max-w-[200px] border border-border/40">
-                  <p>• Định dạng: MP4, WebM</p>
-                  <p>• Dung lượng: Tối đa 100MB</p>
-                  <p>• Độ dài: Dưới 3 phút</p>
+                  <p>• {t('upload.format')}</p>
+                  <p>• {t('upload.maxSize')}</p>
+                  <p>• {t('upload.maxDuration')}</p>
                 </div>
 
                 <button
                   type="button"
                   className="mt-6 px-6 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-bold rounded-lg transition-colors cursor-pointer"
                 >
-                  Chọn tệp
+                  {t('upload.chooseFile')}
                 </button>
               </div>
             ) : (
@@ -296,7 +309,7 @@ export default function UploadPage() {
                     <path d="M4 10H44" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                     <path d="M16 10L19.2778 4H28.7222L32 10H16Z" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
                   </svg>
-                  Hủy và chọn lại
+                  {t('upload.chooseAgain')}
                 </button>
               </div>
             )}
@@ -307,12 +320,12 @@ export default function UploadPage() {
             <form onSubmit={handleUpload} className="space-y-6">
               {/* Caption */}
               <div>
-                <label className="block text-sm font-bold text-text-primary mb-2">Chú thích</label>
+                <label className="block text-sm font-bold text-text-primary mb-2">{t('upload.caption')}</label>
                 <div className="relative">
                   <textarea
                     value={title}
                     onChange={(e) => setTitle(e.target.value.slice(0, 150))}
-                    placeholder="Viết chú thích cho video của bạn ở đây... Sử dụng # để thêm hashtag"
+                    placeholder={t('upload.captionPlaceholder')}
                     rows={3}
                     disabled={isUploading}
                     className="w-full bg-bg-primary border border-border text-text-primary rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none transition-colors"
@@ -325,22 +338,26 @@ export default function UploadPage() {
 
               {/* Visibility Select */}
               <div>
-                <label className="block text-sm font-bold text-text-primary mb-2">Ai có thể xem video này</label>
+                <label className="block text-sm font-bold text-text-primary mb-2">{t('upload.visibility')}</label>
                 <select
                   value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as any)}
+                  onChange={(e) =>
+                    setVisibility(
+                      e.target.value as 'PUBLIC' | 'PRIVATE' | 'FRIENDS_ONLY',
+                    )
+                  }
                   disabled={isUploading}
                   className="w-full md:w-60 bg-bg-primary border border-border text-text-primary rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary cursor-pointer transition-colors"
                 >
-                  <option value="PUBLIC">Mọi người (Công khai)</option>
-                  <option value="FRIENDS_ONLY">Bạn bè (Chỉ người theo dõi lẫn nhau)</option>
-                  <option value="PRIVATE">Chỉ mình tôi (Riêng tư)</option>
+                  <option value="PUBLIC">{t('upload.public')}</option>
+                  <option value="FRIENDS_ONLY">{t('upload.friends')}</option>
+                  <option value="PRIVATE">{t('upload.private')}</option>
                 </select>
               </div>
 
               {/* Interactions switches */}
               <div>
-                <label className="block text-sm font-bold text-text-primary mb-3">Cho phép người dùng</label>
+                <label className="block text-sm font-bold text-text-primary mb-3">{t('upload.permissions')}</label>
                 <div className="flex flex-col sm:flex-row gap-6">
                   <label className="flex items-center gap-3 cursor-pointer select-none">
                     <input
@@ -350,7 +367,7 @@ export default function UploadPage() {
                       disabled={isUploading}
                       className="w-4.5 h-4.5 text-primary bg-bg-primary border-border rounded focus:ring-primary focus:ring-2 cursor-pointer"
                     />
-                    <span className="text-sm font-semibold text-text-primary">Bình luận</span>
+                    <span className="text-sm font-semibold text-text-primary">{t('upload.comments')}</span>
                   </label>
 
                   <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -361,7 +378,7 @@ export default function UploadPage() {
                       disabled={isUploading}
                       className="w-4.5 h-4.5 text-primary bg-bg-primary border-border rounded focus:ring-primary focus:ring-2 cursor-pointer"
                     />
-                    <span className="text-sm font-semibold text-text-primary">Tải xuống</span>
+                    <span className="text-sm font-semibold text-text-primary">{t('upload.download')}</span>
                   </label>
                 </div>
               </div>
@@ -370,13 +387,13 @@ export default function UploadPage() {
               {file && (
                 <div className="p-4 bg-bg-primary rounded-lg border border-border/60 flex flex-wrap gap-x-6 gap-y-2 text-xs text-text-secondary">
                   <div>
-                    <span className="font-semibold text-text-primary">Thời lượng:</span> {duration.toFixed(1)}s
+                    <span className="font-semibold text-text-primary">{t('upload.duration')}:</span> {duration.toFixed(1)}s
                   </div>
                   <div>
-                    <span className="font-semibold text-text-primary">Kích thước:</span> {width} × {height}
+                    <span className="font-semibold text-text-primary">{t('upload.dimensions')}:</span> {width} × {height}
                   </div>
                   <div>
-                    <span className="font-semibold text-text-primary">Dung lượng:</span> {(file.size / 1024 / 1024).toFixed(2)} MB
+                    <span className="font-semibold text-text-primary">{t('upload.size')}:</span> {(file.size / 1024 / 1024).toFixed(2)} MB
                   </div>
                 </div>
               )}
@@ -386,9 +403,9 @@ export default function UploadPage() {
                 <div className="space-y-2 animate-fade-in">
                   <div className="flex justify-between text-xs font-bold">
                     <span className="text-text-primary">
-                      {uploadStatus === 'requesting' && 'Đang chuẩn bị phiên tải lên...'}
-                      {uploadStatus === 'uploading' && `Đang gửi video đến máy chủ lưu trữ...`}
-                      {uploadStatus === 'saving' && 'Đang tối ưu hóa và xuất bản video...'}
+                      {uploadStatus === 'requesting' && t('upload.requesting')}
+                      {uploadStatus === 'uploading' && t('upload.uploading')}
+                      {uploadStatus === 'saving' && t('upload.saving')}
                     </span>
                     <span className="text-primary">{uploadProgress}%</span>
                   </div>
@@ -410,7 +427,7 @@ export default function UploadPage() {
                   disabled={isUploading || !file}
                   className="flex-1 py-3 border border-border font-bold rounded-lg text-text-primary hover:bg-bg-primary/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-center text-sm"
                 >
-                  Hủy
+                  {t('common.cancel')}
                 </button>
                 
                 <button
@@ -418,7 +435,7 @@ export default function UploadPage() {
                   disabled={isUploading || !file}
                   className="flex-1 py-3 bg-primary hover:bg-primary-hover font-bold rounded-lg text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-center text-sm shadow-md"
                 >
-                  {isUploading ? 'Đang xử lý...' : 'Đăng'}
+                  {isUploading ? t('upload.processing') : t('common.post')}
                 </button>
               </div>
             </form>

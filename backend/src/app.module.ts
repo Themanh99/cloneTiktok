@@ -14,6 +14,8 @@ import { HashtagModule } from './hashtag/hashtag.module';
 import { InteractionModule } from './interaction/interaction.module';
 import { CommentModule } from './comment/comment.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { I18nModule } from './i18n/i18n.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { MetricsModule } from './metrics/metrics.module';
     PrismaModule,
     RedisModule,
     StorageModule,
+    I18nModule,
     UserModule,
     AuthModule,
     VideoModule,
@@ -42,6 +45,7 @@ import { MetricsModule } from './metrics/metrics.module';
     InteractionModule,
     CommentModule,
     MetricsModule,
+    SearchModule,
   ],
 })
 export class AppModule {}

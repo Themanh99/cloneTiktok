@@ -5,6 +5,8 @@ import { useAuthStore, useAuthModalStore } from '@/stores';
 import * as http from '@/lib/http';
 import EditProfileModal from '@/components/EditProfileModal';
 import { useRef } from 'react';
+import { useTranslation } from '@/i18n';
+import { PageError, PageSkeleton } from '@/components/common/Feedback';
 
 interface UserProfile {
   id: string;
@@ -41,15 +43,12 @@ const VerifiedBadge = () => (
 
 const VideoCard = ({ video, onClick }: { video: VideoItem; onClick: () => void }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isHovered, setIsHovered] = useState(false);
 
   const handleMouseEnter = () => {
-    setIsHovered(true);
     videoRef.current?.play().catch(() => {});
   };
 
   const handleMouseLeave = () => {
-    setIsHovered(false);
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.currentTime = 0;
@@ -110,6 +109,7 @@ export default function ProfilePage() {
 
   const user = useAuthStore((s) => s.user);
   const openModal = useAuthModalStore((s) => s.openModal);
+  const { t } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<'PUBLIC' | 'PRIVATE'>('PUBLIC');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -117,7 +117,12 @@ export default function ProfilePage() {
   const isOwner = user?.username === cleanNickname;
 
   // Fetch Public Profile from NestJS backend API
-  const { data: profile, isLoading: isProfileLoading, error: profileError } = useQuery<UserProfile>({
+  const {
+    data: profile,
+    isLoading: isProfileLoading,
+    error: profileError,
+    refetch: refetchProfile,
+  } = useQuery<UserProfile>({
     queryKey: ['profile', cleanNickname],
     queryFn: () => http.get(`/users/${cleanNickname}`),
     enabled: !!cleanNickname,
@@ -156,25 +161,16 @@ export default function ProfilePage() {
   };
 
   if (isProfileLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[500px]">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
+    return <PageSkeleton rows={5} />;
   }
 
   if (profileError || !profile) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] text-center p-4">
-        <h2 className="text-xl font-bold text-text-primary mb-2">Không tìm thấy tài khoản</h2>
-        <p className="text-text-secondary text-sm">Người dùng này không tồn tại hoặc đã bị khóa.</p>
-        <button
-          onClick={() => navigate('/')}
-          className="mt-4 px-6 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors"
-        >
-          Về trang chủ
-        </button>
-      </div>
+      <PageError
+        title={t('profile.notFound')}
+        description={t('profile.notFoundDescription')}
+        onRetry={() => void refetchProfile()}
+      />
     );
   }
 
@@ -202,7 +198,7 @@ export default function ProfilePage() {
                   <path d="M7 42H43" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
                   <path d="M11 26.7199V34H18.3172L39 13.3081L31.6919 6L11 26.7199Z" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round"/>
                 </svg>
-                Sửa hồ sơ
+                {t('profile.edit')}
               </button>
             ) : (
               <button
@@ -214,7 +210,7 @@ export default function ProfilePage() {
                     : 'bg-primary text-white hover:bg-primary-hover'
                 }`}
               >
-                {profile.isFollowing ? 'Đang follow' : 'Follow'}
+                {profile.isFollowing ? t('profile.following') : 'Follow'}
               </button>
             )}
           </div>
@@ -223,19 +219,19 @@ export default function ProfilePage() {
           {/* Stats block */}
           <div className="flex gap-6 mb-4 text-sm">
             <span className="text-text-secondary">
-              <strong className="text-text-primary text-base font-bold mr-1">{profile.followingCount}</strong> Đang follow
+              <strong className="text-text-primary text-base font-bold mr-1">{profile.followingCount}</strong> {t('profile.following')}
             </span>
             <span className="text-text-secondary">
-              <strong className="text-text-primary text-base font-bold mr-1">{profile.followerCount}</strong> Follower
+              <strong className="text-text-primary text-base font-bold mr-1">{profile.followerCount}</strong> {t('profile.followers')}
             </span>
             <span className="text-text-secondary">
-              <strong className="text-text-primary text-base font-bold mr-1">{profile.totalLikes}</strong> Lượt thích
+              <strong className="text-text-primary text-base font-bold mr-1">{profile.totalLikes}</strong> {t('profile.likes')}
             </span>
           </div>
 
           {/* Bio block */}
           <p className="text-sm text-text-primary whitespace-pre-line leading-relaxed font-normal">
-            {profile.bio || 'Chưa có tiểu sử.'}
+            {profile.bio || t('profile.noBio')}
           </p>
         </div>
       </div>
@@ -250,7 +246,7 @@ export default function ProfilePage() {
               : 'text-text-secondary hover:text-text-primary'
           }`}
         >
-          Video
+          {t('profile.videos')}
         </button>
         {isOwner && (
           <button
@@ -265,7 +261,7 @@ export default function ProfilePage() {
               <path d="M12 22H36V42H12V22Z" fill="currentColor" stroke="currentColor" strokeWidth="4" strokeLinejoin="round"/>
               <path d="M18 22V15C18 11.6863 20.6863 9 24 9C27.3137 9 30 11.6863 30 15V22" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            Riêng tư
+            {t('profile.private')}
           </button>
         )}
       </div>
@@ -280,7 +276,7 @@ export default function ProfilePage() {
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-text-tertiary mb-3">
             <path d="M24 4C12.95 4 4 12.95 4 24C4 35.05 12.95 44 24 44C35.05 44 44 35.05 44 24C44 12.95 35.05 4 24 4ZM24 38C16.28 38 10 31.72 10 24C10 16.28 16.28 10 24 10C31.72 10 38 16.28 38 24C38 31.72 31.72 38 24 38ZM22 18H26V22H22V18ZM22 26H26V32H22V26Z" fill="currentColor" />
           </svg>
-          <p className="text-sm font-semibold text-text-secondary">Chưa có video nào</p>
+          <p className="text-sm font-semibold text-text-secondary">{t('profile.noVideos')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -295,7 +291,9 @@ export default function ProfilePage() {
       )}
 
       {/* Edit Profile Modal */}
-      <EditProfileModal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} />
+      {isEditOpen && (
+        <EditProfileModal isOpen onClose={() => setIsEditOpen(false)} />
+      )}
     </div>
   );
 }

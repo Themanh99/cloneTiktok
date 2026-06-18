@@ -3,10 +3,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { PaginationDto } from '../common/dtos/pagination.dto';
 import { MessageCode } from '../common/constants/message-codes';
+import { StorageService } from '../storage/storage.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async getMyProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -28,6 +33,7 @@ export class UserService {
         provider: true,
         createdAt: true,
         updatedAt: true,
+        language: { select: { code: true, name: true } },
       },
     });
 
@@ -99,23 +105,62 @@ export class UserService {
   }
 
   // ==================== UPDATE PROFILE ====================
+  getAvatarPresignedUrl(userId: string, contentType: string) {
+    const extension =
+      contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
+    const fileKey = `avatars/${userId}/${Date.now()}-${randomUUID()}.${extension}`;
+    return this.storage.generatePresignedUploadUrl(fileKey, contentType);
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    return this.prisma.user.update({
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatarUrl: true },
+    });
+    if (!currentUser) {
+      throw new NotFoundException({
+        message: 'User not found',
+        messageCode: MessageCode.USER_NOT_FOUND,
+      });
+    }
+
+    const avatarUrl = dto.avatarFileKey
+      ? this.storage.getPublicUrl(dto.avatarFileKey)
+      : undefined;
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...dto,
+        displayName: dto.displayName,
+        bio: dto.bio,
+        gender: dto.gender,
         dob: dto.dob ? new Date(dto.dob) : undefined,
+        avatarUrl,
+        language: dto.languageCode
+          ? { connect: { code: dto.languageCode } }
+          : undefined,
       },
       select: {
         id: true,
+        email: true,
         username: true,
         displayName: true,
         avatarUrl: true,
         bio: true,
         dob: true,
         gender: true,
+        isVerified: true,
+        language: { select: { code: true, name: true } },
       },
     });
+
+    if (avatarUrl && currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
+      const oldFileKey = this.storage.getFileKeyFromPublicUrl(currentUser.avatarUrl);
+      if (oldFileKey) {
+        await this.storage.deleteFile(oldFileKey).catch(() => undefined);
+      }
+    }
+
+    return updatedUser;
   }
 
   // ==================== FOLLOW / UNFOLLOW ====================

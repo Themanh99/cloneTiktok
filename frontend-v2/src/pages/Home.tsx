@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useVideoFeed } from '@/hooks/use-videos';
 import VideoCard, { VideoData } from '@/components/VideoCard';
+import { useTranslation } from '@/i18n';
 
 // Fallback high-fidelity sample videos to ensure a fully functional app out of the box
 const FALLBACK_VIDEOS: VideoData[] = [
@@ -62,6 +63,7 @@ const FALLBACK_VIDEOS: VideoData[] = [
 ];
 
 export default function HomePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useVideoFeed('for-you');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -132,6 +134,7 @@ export default function HomePage() {
 
     // Default active id to first video
     if (videos.length > 0 && !activeId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveId(videos[0].id);
     }
 
@@ -164,7 +167,7 @@ export default function HomePage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-        <span className="text-sm font-semibold text-text-secondary">Đang tải video...</span>
+        <span className="text-sm font-semibold text-text-secondary">{t('misc.loadingVideos')}</span>
       </div>
     );
   }

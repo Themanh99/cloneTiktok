@@ -35,6 +35,16 @@ export class VideoController {
     return this.videoService.getFeedFollowing(userId, pagination);
   }
 
+  @Get('search')
+  @UseGuards(OptionalJwtAuthGuard)
+  searchVideos(
+    @Query('q') query: string,
+    @Query() pagination: PaginationDto,
+    @CurrentUser('id') userId?: string,
+  ) {
+    return this.videoService.searchVideos(query || '', pagination, userId);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   getVideo(@Param('id') id: string, @CurrentUser('id') userId?: string) {

@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const ACCESS_TOKEN_KEY = 'ACCESS_TOKEN';
@@ -22,8 +22,16 @@ const refreshClient = axios.create({
   },
 });
 
+const attachLanguage = (config: InternalAxiosRequestConfig) => {
+  config.headers.set('X-Language', localStorage.getItem('app-language') || 'vi');
+  return config;
+};
+
+refreshClient.interceptors.request.use(attachLanguage);
+
 // Attach access token to every request
 httpRequest.interceptors.request.use((config) => {
+  attachLanguage(config);
   const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;

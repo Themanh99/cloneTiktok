@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, useAuthModalStore } from '@/stores';
 import * as http from '@/lib/http';
+import { useTranslation } from '@/i18n';
+import CommentThread, { type CommentItem } from '@/components/CommentThread';
+import { appToast } from '@/lib/toast';
 
 interface VideoDetail {
   id: string;
@@ -35,25 +38,6 @@ interface VideoDetail {
   hashtags: Array<{ id: string; name: string }>;
 }
 
-interface CommentUser {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string | null;
-  isVerified: boolean;
-}
-interface CommentItem {
-  id: string;
-  content: string;
-  createdAt: string;
-  likeCount: number;
-  isLiked: boolean;
-  user?: CommentUser;
-  author?: CommentUser;
-  replyCount: number;
-  parentId: string | null;
-}
-
 export default function VideoPage() {
   const { uuid } = useParams<{ uuid: string }>();
   const navigate = useNavigate();
@@ -61,6 +45,7 @@ export default function VideoPage() {
 
   const user = useAuthStore((s) => s.user);
   const openModal = useAuthModalStore((s) => s.openModal);
+  const { t } = useTranslation();
 
   // States
   const [commentContent, setCommentContent] = useState('');
@@ -70,8 +55,6 @@ export default function VideoPage() {
   const [volume, setVolume] = useState(0.8);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [expandedCommentReplies, setExpandedCommentReplies] = useState<Record<string, CommentItem[]>>({});
-  const [loadingReplies, setLoadingReplies] = useState<Record<string, boolean>>({});
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,28 +111,13 @@ export default function VideoPage() {
       setCommentContent('');
       setReplyToComment(null);
       queryClient.invalidateQueries({ queryKey: ['video-comments', uuid] });
+      queryClient.invalidateQueries({ queryKey: ['comment-replies'] });
       queryClient.invalidateQueries({ queryKey: ['video', uuid] });
     },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || 'Không thể gửi bình luận');
+    onError: (err: unknown) => {
+      appToast.error(err, t('video.commentFailed'));
     },
   });
-
-  // Fetch Replies for a comment
-  const fetchReplies = async (commentId: string) => {
-    setLoadingReplies((prev) => ({ ...prev, [commentId]: true }));
-    try {
-      const res = await http.get<{ data: CommentItem[] }>(`/comments/${commentId}/replies`);
-      setExpandedCommentReplies((prev) => ({
-        ...prev,
-        [commentId]: res.data || [],
-      }));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingReplies((prev) => ({ ...prev, [commentId]: false }));
-    }
-  };
 
   // Video Controls
   const togglePlay = () => {
@@ -219,7 +187,7 @@ export default function VideoPage() {
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
-    alert('Đã sao chép liên kết video!');
+    appToast.success(t('video.copyLink'));
   };
 
   const formatTime = (time: number) => {
@@ -240,19 +208,19 @@ export default function VideoPage() {
   if (videoError || !video) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-black text-white p-4">
-        <h2 className="text-xl font-bold mb-2">Video không tồn tại</h2>
+        <h2 className="text-xl font-bold mb-2">{t('video.notFound')}</h2>
         <button
           onClick={() => navigate('/')}
           className="mt-4 px-6 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors"
         >
-          Về trang chủ
+          {t('common.home')}
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-full bg-bg-primary overflow-hidden animate-fade-in relative z-50">
+    <div className="relative flex h-[calc(100vh-60px)] w-full overflow-hidden bg-bg-primary animate-fade-in">
       
       {/* LEFT COLUMN: VIDEO VIEW */}
       <div className="relative flex-[1.5] bg-black flex items-center justify-center select-none group/video">
@@ -282,7 +250,7 @@ export default function VideoPage() {
         </button>
 
         {/* Video Player Box */}
-        <div className="relative aspect-[9/16] h-[90vh] max-h-[800px] rounded-lg overflow-hidden bg-black shadow-2xl flex items-center justify-center">
+        <div className="relative aspect-[9/16] h-[calc(100vh-92px)] max-h-[800px] rounded-lg overflow-hidden bg-black shadow-2xl flex items-center justify-center">
           <video
             ref={videoRef}
             src={video.originalUrl}
@@ -419,7 +387,7 @@ export default function VideoPage() {
                 <path d="M24 44C35.0457 44 44 35.0457 44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44Z" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
                 <path d="M24 30C27.3137 30 30 27.3137 30 24C30 20.6863 27.3137 18 24 18C20.6863 18 18 20.6863 18 24C18 27.3137 20.6863 30 24 30Z" fill="currentColor" />
               </svg>
-              <span>nhạc nền - {video.sound.name}</span>
+              <span>{t('video.sound')} - {video.sound.name}</span>
             </div>
           )}
         </div>
@@ -488,7 +456,7 @@ export default function VideoPage() {
                   </svg>
                 )}
               </div>
-              <span className="text-xs font-bold text-text-primary">Lưu</span>
+              <span className="text-xs font-bold text-text-primary">{t('video.save')}</span>
             </button>
           </div>
 
@@ -496,7 +464,7 @@ export default function VideoPage() {
           <button
             onClick={handleCopyLink}
             className="p-2 rounded-full text-text-primary hover:bg-bg-hover transition-colors"
-            title="Sao chép liên kết"
+            title={t('video.copyLinkTitle')}
           >
             <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
               <path d="M28 6L42 20L28 34" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -513,128 +481,17 @@ export default function VideoPage() {
             </div>
           ) : comments.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center text-text-tertiary">
-              <p className="text-sm font-semibold mb-1">Chưa có bình luận nào</p>
-              <p className="text-xs">Hãy là người đầu tiên bình luận về video này!</p>
+              <p className="text-sm font-semibold mb-1">{t('video.noComments')}</p>
+              <p className="text-xs">{t('video.firstComment')}</p>
             </div>
           ) : (
-            comments.map((comment) => {
-              const commentUser = comment.author || comment.user || {
-                username: 'user',
-                displayName: 'Người dùng',
-                avatarUrl: null,
-                isVerified: false,
-              };
-              return (
-                <div key={comment.id} className="space-y-4">
-                  
-                  {/* Root Comment Card */}
-                  <div className="flex gap-3 items-start group">
-                    <img
-                      onClick={() => navigate(`/@${commentUser.username}`)}
-                      src={commentUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                      className="w-8 h-8 rounded-full object-cover cursor-pointer border border-border/10"
-                      alt={commentUser.username}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span
-                          onClick={() => navigate(`/@${commentUser.username}`)}
-                          className="text-xs font-bold text-text-primary hover:underline cursor-pointer"
-                        >
-                          {commentUser.username}
-                        </span>
-                        {commentUser.isVerified && (
-                          <svg width="10" height="10" viewBox="0 0 48 48" fill="none">
-                            <circle cx="24" cy="24" r="20" fill="#20D5EC" />
-                            <path d="M16 24L22 30L32 18" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </div>
-                      <p className="text-sm text-text-primary mt-1 leading-normal whitespace-pre-wrap">{comment.content}</p>
-                      
-                      {/* Actions row */}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-text-tertiary font-semibold">
-                        <span>{new Date(comment.createdAt).toLocaleDateString('vi-VN')}</span>
-                        <button onClick={() => handleReplyClick(comment)} className="hover:underline">
-                          Trả lời
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Comment Heart button */}
-                    <div className="flex flex-col items-center text-text-tertiary hover:text-text-primary cursor-pointer transition-colors">
-                      <svg width="16" height="16" viewBox="0 0 48 48" fill="none">
-                        <path d="M15 8C8.92487 8 4 12.9249 4 19C4 30 17 40 24 42.3262C31 40 44 30 44 19C44 12.9249 39.0751 8 33 8C29.2797 8 25.9907 9.8469 24 12.6738C22.0093 9.8469 18.7203 8 15 8Z" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <span className="text-[10px] mt-0.5">{comment.likeCount}</span>
-                    </div>
-                  </div>
-
-                  {/* Indented Replies Section */}
-                  <div className="pl-11 space-y-4">
-                    {/* Expanded replies */}
-                    {expandedCommentReplies[comment.id]?.map((reply) => {
-                      const replyUser = reply.author || reply.user || {
-                        username: 'user',
-                        displayName: 'Người dùng',
-                        avatarUrl: null,
-                        isVerified: false,
-                      };
-                      return (
-                        <div key={reply.id} className="flex gap-3 items-start">
-                          <img
-                            onClick={() => navigate(`/@${replyUser.username}`)}
-                            src={replyUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                            className="w-6 h-6 rounded-full object-cover cursor-pointer border border-border/10"
-                            alt={replyUser.username}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                              <span
-                                onClick={() => navigate(`/@${replyUser.username}`)}
-                                className="text-xs font-bold text-text-primary hover:underline cursor-pointer"
-                              >
-                                {replyUser.username}
-                              </span>
-                              {replyUser.isVerified && (
-                                <svg width="10" height="10" viewBox="0 0 48 48" fill="none">
-                                  <circle cx="24" cy="24" r="20" fill="#20D5EC" />
-                                  <path d="M16 24L22 30L32 18" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              )}
-                            </div>
-                            <p className="text-sm text-text-primary mt-1 leading-normal whitespace-pre-wrap">{reply.content}</p>
-                            <div className="flex items-center gap-4 mt-2 text-xs text-text-tertiary font-semibold">
-                              <span>{new Date(reply.createdAt).toLocaleDateString('vi-VN')}</span>
-                              <button onClick={() => handleReplyClick(comment)} className="hover:underline">
-                                Trả lời
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Expand Replies controller */}
-                    {comment.replyCount > 0 && !expandedCommentReplies[comment.id] && (
-                      <button
-                        onClick={() => fetchReplies(comment.id)}
-                        disabled={loadingReplies[comment.id]}
-                        className="text-xs font-bold text-text-secondary hover:text-text-primary flex items-center gap-1.5 transition-colors"
-                      >
-                        {loadingReplies[comment.id] ? (
-                          <div className="w-3 h-3 border-2 border-text-secondary border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <span className="w-6 h-[1px] bg-text-secondary inline-block mr-1"></span>
-                        )}
-                        Xem thêm câu trả lời ({comment.replyCount})
-                      </button>
-                    )}
-                  </div>
-
-                </div>
-              );
-            })
+            comments.map((comment) => (
+              <CommentThread
+                key={comment.id}
+                comment={comment}
+                onReply={handleReplyClick}
+              />
+            ))
           )}
         </div>
 
@@ -645,7 +502,7 @@ export default function VideoPage() {
             const replyUser = replyToComment.author || replyToComment.user;
             return (
               <div className="flex items-center justify-between px-3 py-1.5 bg-bg-secondary rounded-lg mb-2 text-xs text-text-secondary">
-                <span>Đang trả lời @{replyUser?.username || 'user'}</span>
+                <span>{t('video.replyingTo')} @{replyUser?.username || 'user'}</span>
                 <button onClick={() => setReplyToComment(null)} className="text-text-tertiary hover:text-text-primary">
                   <svg width="14" height="14" viewBox="0 0 48 48" fill="none">
                     <path d="M14 14L34 34" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -662,7 +519,7 @@ export default function VideoPage() {
               type="text"
               value={commentContent}
               onChange={(e) => setCommentContent(e.target.value)}
-              placeholder={replyToComment ? `Trả lời @${(replyToComment.author || replyToComment.user)?.username || 'user'}...` : 'Thêm bình luận...'}
+              placeholder={replyToComment ? `${t('common.reply')} @${(replyToComment.author || replyToComment.user)?.username || 'user'}...` : t('video.addComment')}
               className="flex-1 bg-bg-secondary text-text-primary border border-border/30 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors"
             />
             <button
@@ -670,7 +527,7 @@ export default function VideoPage() {
               disabled={postCommentMutation.isPending || !commentContent.trim()}
               className="px-5 py-2.5 bg-primary text-white font-bold rounded-lg text-sm hover:bg-primary-hover disabled:opacity-50 transition-colors shadow-sm"
             >
-              {postCommentMutation.isPending ? 'Đang gửi...' : 'Đăng'}
+              {postCommentMutation.isPending ? t('common.loading') : t('common.post')}
             </button>
           </form>
         </div>
