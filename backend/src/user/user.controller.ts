@@ -1,9 +1,11 @@
 import { Controller, Get, Patch, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { PaginationDto } from '../common/dtos/pagination.dto';
+import { GetUserVideosDto } from './dto/get-user-videos.dto';
 
 @Controller('users')
 export class UserController {
@@ -29,8 +31,21 @@ export class UserController {
     return this.userService.searchUsers(query || '', pagination);
   }
 
+  // GET /api/users/:id/videos
+  @Get(':id/videos')
+  @UseGuards(OptionalJwtAuthGuard)
+  getUserVideos(
+    @Param('id') userId: string,
+    @Query() query: GetUserVideosDto,
+    @CurrentUser('id') currentUserId?: string,
+  ) {
+    return this.userService.getUserVideos(userId, query, currentUserId, query.visibility);
+  }
+
+
   // GET /api/users/:id — Public profile
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   getPublicProfile(
     @Param('id') targetUserId: string,
     @CurrentUser('id') currentUserId?: string,

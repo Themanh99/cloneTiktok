@@ -41,9 +41,9 @@ export class UserService {
     return user;
   }
 
-  async getPublicProfile(targetUserId: string, currentUserId?: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
+  async getPublicProfile(targetUserIdOrUsername: string, currentUserId?: string) {
+    let user = await this.prisma.user.findUnique({
+      where: { id: targetUserIdOrUsername },
       select: {
         id: true,
         username: true,
@@ -59,6 +59,24 @@ export class UserService {
     });
 
     if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { username: targetUserIdOrUsername },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarUrl: true,
+          bio: true,
+          isVerified: true,
+          followerCount: true,
+          followingCount: true,
+          totalLikes: true,
+          createdAt: true,
+        },
+      });
+    }
+
+    if (!user) {
       throw new NotFoundException({
         message: 'User not found',
         messageCode: MessageCode.USER_NOT_FOUND,
@@ -71,7 +89,7 @@ export class UserService {
         where: {
           followerId_followingId: {
             followerId: currentUserId,
-            followingId: targetUserId,
+            followingId: user.id,
           },
         },
       });
@@ -191,9 +209,38 @@ export class UserService {
     return { messageCode: MessageCode.USER_UNFOLLOWED };
   }
 
+  async resolveUserId(idOrUsername: string): Promise<string> {
+    // Check UUID pattern first to avoid database errors if possible, or just query.
+    // In PostgreSQL, querying UUID column with non-UUID string throws error.
+    // So let's validate if idOrUsername is a valid UUID, otherwise query by username.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrUsername);
+    if (isUuid) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: idOrUsername },
+        select: { id: true },
+      });
+      if (user) return user.id;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { username: idOrUsername },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        messageCode: MessageCode.USER_NOT_FOUND,
+      });
+    }
+
+    return user.id;
+  }
+
   // ==================== FOLLOWERS / FOLLOWING LIST ====================
 
-  async getFollowers(userId: string, pagination: PaginationDto) {
+  async getFollowers(userIdOrUsername: string, pagination: PaginationDto) {
+    const userId = await this.resolveUserId(userIdOrUsername);
     const { cursor, limit = 10 } = pagination;
 
     const follows = await this.prisma.follow.findMany({
@@ -228,7 +275,8 @@ export class UserService {
     };
   }
 
-  async getFollowing(userId: string, pagination: PaginationDto) {
+  async getFollowing(userIdOrUsername: string, pagination: PaginationDto) {
+    const userId = await this.resolveUserId(userIdOrUsername);
     const { cursor, limit = 10 } = pagination;
 
     const follows = await this.prisma.follow.findMany({
@@ -262,6 +310,71 @@ export class UserService {
       nextCursor: follows.length === limit ? follows[follows.length - 1].followingId : null,
     };
   }
+
+
+  // ==================== USER VIDEOS ====================
+  async getUserVideos(
+    userIdOrUsername: string,
+    pagination: PaginationDto,
+    currentUserId?: string,
+    visibility?: string,
+  ) {
+    const userId = await this.resolveUserId(userIdOrUsername);
+
+    // Check if the current user is the owner of the videos
+    const isOwner = currentUserId === userId;
+
+    // Determine target visibility filter
+    let visibilityFilter: any = 'PUBLIC';
+    if (isOwner && visibility) {
+      if (['PUBLIC', 'FRIENDS_ONLY', 'PRIVATE'].includes(visibility)) {
+        visibilityFilter = visibility;
+      } else if (visibility === 'ALL') {
+        visibilityFilter = { in: ['PUBLIC', 'FRIENDS_ONLY', 'PRIVATE'] };
+      }
+    }
+
+    const { cursor, limit = 10 } = pagination;
+    const videos = await this.prisma.video.findMany({
+      where: {
+        authorId: userId,
+        visibility: visibilityFilter,
+      },
+      take: limit,
+      ...(cursor && { skip: 1, cursor: { id: cursor } }),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        sound: {
+          select: {
+            id: true,
+            name: true,
+            audioUrl: true,
+            coverUrl: true,
+          },
+        },
+        hashtags: {
+          include: {
+            hashtag: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      data: videos.map((video) => ({
+        ...video,
+        sizeBytes: video.sizeBytes.toString(),
+        hashtags: video.hashtags.map((item) => item.hashtag),
+      })),
+      nextCursor: videos.length === limit ? videos[videos.length - 1].id : null,
+    };
+  }
+
 
   // ==================== SEARCH ====================
   async searchUsers(query: string, pagination: PaginationDto) {

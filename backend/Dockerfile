@@ -1,8 +1,9 @@
 # ============================================
 # Stage 1: Build (Image lớn ~800MB, có source code)
 # ============================================
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache openssl
 
 # Trick: Copy package*.json TRƯỚC, rồi mới install
 # → Docker cache layer: nếu package.json không đổi, npm install sẽ skip
@@ -20,8 +21,9 @@ RUN npm run build
 # ============================================
 # Stage 2: Production (Image nhỏ ~200MB)
 # ============================================
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache openssl
 
 # Chỉ copy artifacts cần thiết, bỏ source code + dev dependencies
 COPY --from=builder /app/node_modules ./node_modules
@@ -33,4 +35,4 @@ EXPOSE 3000
 
 # Chạy migration trước khi start app
 # prisma migrate deploy: chạy pending migrations (không tạo migration mới)
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

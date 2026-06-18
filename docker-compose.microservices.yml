@@ -1,0 +1,218 @@
+name: tiktokweb-local-lab
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tiktok-postgres
+    environment:
+      POSTGRES_DB: tiktok_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tiktok_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tiktok-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: tiktok-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: tiktok
+      RABBITMQ_DEFAULT_PASS: tiktok123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: tiktok-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: tiktok
+      MINIO_ROOT_PASSWORD: tiktok123
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  createbuckets:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: tiktok-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 tiktok tiktok123; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc alias set local http://minio:9000 tiktok tiktok123 &&
+      mc mb --ignore-existing local/tiktok-videos &&
+      mc anonymous set download local/tiktok-videos
+      "
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tiktok-api
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/tiktok_db?schema=public
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://tiktok:tiktok123@rabbitmq:5672
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_S3_PRESIGN_ENDPOINT: http://localhost:9000
+      AWS_S3_PUBLIC_URL: http://localhost:8080/media
+      FRONTEND_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      createbuckets:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/videos/feed?limit=1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend-v2
+      dockerfile: Dockerfile
+    container_name: tiktok-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      nginx:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: tiktok-nginx
+    depends_on:
+      api:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.1
+    container_name: tiktok-nginx-exporter
+    command:
+      - -nginx.scrape-uri=http://nginx/nginx_status
+    depends_on:
+      - nginx
+    ports:
+      - "9113:9113"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: tiktok-redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      - redis
+    ports:
+      - "9121:9121"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: tiktok-postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:postgres123@postgres:5432/tiktok_db?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "9187:9187"
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: tiktok-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: tiktok-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:

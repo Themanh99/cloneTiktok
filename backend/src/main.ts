@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
@@ -9,7 +9,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // 1. Global prefix: all APIs will start with '/api'
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'metrics', method: RequestMethod.GET }],
+  });
 
   // 2. CORS configuration
   // Allow frontend to access backend (e.g. localhost:5173 → localhost:3000)

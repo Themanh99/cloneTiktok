@@ -6,6 +6,14 @@ import { UserModule } from './user/user.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
+import { StorageModule } from './storage/storage.module';
+import { VideoModule } from './video/video.module';
+import { TasksModule } from './tasks/tasks.module';
+import { SoundModule } from './sound/sound.module';
+import { HashtagModule } from './hashtag/hashtag.module';
+import { InteractionModule } from './interaction/interaction.module';
+import { CommentModule } from './comment/comment.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -24,8 +32,16 @@ import { AuthModule } from './auth/auth.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
+    StorageModule,
     UserModule,
     AuthModule,
+    VideoModule,
+    TasksModule,
+    SoundModule,
+    HashtagModule,
+    InteractionModule,
+    CommentModule,
+    MetricsModule,
   ],
 })
 export class AppModule {}

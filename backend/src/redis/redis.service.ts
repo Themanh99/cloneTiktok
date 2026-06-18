@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
-  private client: Redis;
+  private client?: Redis;
   private readonly logger = new Logger(RedisService.name);
 
   constructor(private configService: ConfigService) {}
@@ -23,7 +23,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.client.quit();
+    if (this.client) {
+      await this.client.quit();
+    }
   }
 
   // === Wrapper methods ===
@@ -33,27 +35,27 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   // 3. Simple to add logging/metrics later
 
   async get(key: string): Promise<string | null> {
-    return this.client.get(key);
+    return this.getClient().get(key);
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
     if (ttlSeconds) {
-      await this.client.set(key, value, 'EX', ttlSeconds);
+      await this.getClient().set(key, value, 'EX', ttlSeconds);
     } else {
-      await this.client.set(key, value);
+      await this.getClient().set(key, value);
     }
   }
 
   async del(key: string): Promise<void> {
-    await this.client.del(key);
+    await this.getClient().del(key);
   }
 
   async incr(key: string): Promise<number> {
-    return this.client.incr(key);
+    return this.getClient().incr(key);
   }
 
   async expire(key: string, seconds: number): Promise<void> {
-    await this.client.expire(key, seconds);
+    await this.getClient().expire(key, seconds);
   }
 
   // Scan pattern — used for batch view count updates
@@ -62,7 +64,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const keys: string[] = [];
     let cursor = '0';
     do {
-      const [nextCursor, foundKeys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      const [nextCursor, foundKeys] = await this.getClient().scan(cursor, 'MATCH', pattern, 'COUNT', 100);
       cursor = nextCursor;
       keys.push(...foundKeys);
     } while (cursor !== '0');
@@ -71,6 +73,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   // Expose raw client for Socket.io Adapter
   getClient(): Redis {
+    if (!this.client) {
+      throw new Error('Redis client is not initialized');
+    }
+
     return this.client;
   }
 }

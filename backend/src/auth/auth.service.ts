@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { MessageCode } from '../common/constants/message-codes';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -28,10 +29,8 @@ export class AuthService {
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [
-          {
-            email: dto.email,
-            username: dto.username,
-          },
+          { email: dto.email },
+          { username: dto.username },
         ],
       },
     });
@@ -231,13 +230,15 @@ export class AuthService {
     // Access token — TTL 15 minutes
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_ACCESS_SECRET'),
-      expiresIn: this.configService.get('JWT_ACCESS_EXPRIATION') || '15m',
+      expiresIn: this.configService.get('JWT_ACCESS_EXPIRATION') || '15m',
+      jwtid: randomUUID(),
     });
 
     // Refresh token — TTL 7 days
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get('JWT_REFRESH_EXPRIATION') || '7d',
+      expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION') || '7d',
+      jwtid: randomUUID(),
     });
 
     return {
@@ -247,8 +248,10 @@ export class AuthService {
   }
 
   private async saveRefreshToken(userId: string, token: string) {
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+    const decoded = this.jwtService.decode(token) as { exp?: number } | null;
+    const expiresAt = decoded?.exp
+      ? new Date(decoded.exp * 1000)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await this.prisma.refreshToken.create({
       data: { token, userId, expiresAt },

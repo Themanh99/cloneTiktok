@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: TikTokWeb Local Lab
+    orgId: 1
+    folder: TikTokWeb
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
