@@ -164,25 +164,25 @@ export default function Sidebar() {
     { path: routes.home, label: t('sidebar.forYou'), icon: HomeIcon },
     { path: routes.explore, label: t('sidebar.explore'), icon: ExploreIcon },
     { path: routes.following, label: t('sidebar.following'), icon: FollowingIcon },
-    { path: '/friends', label: t('sidebar.friends'), icon: FriendsIcon },
-    { path: routes.live, label: 'LIVE', icon: LiveIcon },
-    { path: '/messages', label: t('sidebar.messages'), icon: MessagesIcon },
-    { path: '/activity', label: t('sidebar.activity'), icon: ActivityIcon },
+    { path: '/friends', label: t('sidebar.friends'), icon: FriendsIcon, hideOnMobile: true },
+    { path: routes.live, label: 'LIVE', icon: LiveIcon, hideOnMobile: true },
+    { path: '/messages', label: t('sidebar.messages'), icon: MessagesIcon, hideOnMobile: true },
+    { path: '/activity', label: t('sidebar.activity'), icon: ActivityIcon, hideOnMobile: true },
     { path: '/upload', label: t('sidebar.upload'), icon: UploadIcon },
   ];
 
   return (
-    <aside className="fixed left-0 top-[60px] bottom-0 w-[var(--width-sidebar)] bg-bg-primary border-r border-border flex flex-col py-4 z-30 overflow-y-auto">
+    <aside className="app-sidebar fixed z-30 flex bg-bg-primary">
       {/* Navigation */}
-      <nav className="px-2 space-y-1">
-        {navItems.map(({ path, label, icon: Icon }) => (
+      <nav className="app-sidebar__nav">
+        {navItems.map(({ path, label, icon: Icon, hideOnMobile }) => (
           <NavLink
             key={path}
             to={path}
             end={path === '/'}
             onClick={(e) => handleNavClick(path, e)}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-3 rounded-lg text-md font-bold transition-colors duration-150 no-underline ${
+              `app-sidebar__item ${hideOnMobile ? 'app-sidebar__item--desktop' : ''} ${
                 isActive
                   ? 'text-primary'
                   : 'text-text-primary hover:bg-bg-hover'
@@ -192,7 +192,7 @@ export default function Sidebar() {
             {({ isActive }) => (
               <>
                 <Icon active={isActive} />
-                <span className="hidden sm:inline">{label}</span>
+                <span className="app-sidebar__label">{label}</span>
               </>
             )}
           </NavLink>
@@ -208,7 +208,7 @@ export default function Sidebar() {
             }
           }}
           className={({ isActive }) =>
-            `flex items-center gap-3 px-3 py-3 rounded-lg text-md font-bold transition-colors duration-150 no-underline ${
+            `app-sidebar__item ${
               isActive && user
                 ? 'text-primary'
                 : 'text-text-primary hover:bg-bg-hover'
@@ -226,13 +226,13 @@ export default function Sidebar() {
               ) : (
                 <ProfileIcon active={isActive && !!user} />
               )}
-              <span className="hidden sm:inline">{t('sidebar.profile')}</span>
+              <span className="app-sidebar__label">{t('sidebar.profile')}</span>
             </>
           )}
         </NavLink>
 
         {/* More popover button */}
-        <div className="relative">
+        <div className="app-sidebar__more relative">
           <button
             ref={moreButtonRef}
             onClick={toggleMore}
@@ -241,7 +241,7 @@ export default function Sidebar() {
             }`}
           >
             <MoreIcon active={isMoreOpen} />
-            <span className="hidden sm:inline">{t('sidebar.more')}</span>
+            <span className="app-sidebar__wide-label">{t('sidebar.more')}</span>
           </button>
 
           {/* More Popover Menu */}
@@ -320,7 +320,7 @@ export default function Sidebar() {
 
       {/* Followed accounts section */}
       {followedAccounts.length > 0 && (
-        <div className="pt-4 border-t border-divider px-3 mt-4">
+        <div className="app-sidebar__wide-section pt-4 border-t border-divider px-3 mt-4">
           <p className="text-xs font-semibold text-text-secondary mb-2 px-2">{t('sidebar.followedAccounts')}</p>
           <div className="space-y-1">
             {followedAccounts.slice(0, 5).map((acc) => (
@@ -352,7 +352,7 @@ export default function Sidebar() {
 
       {/* Guest Login CTA Card (exactly as in Figma) */}
       {!user && (
-        <div className="mx-4 my-4 p-4 border border-divider rounded-lg bg-bg-secondary text-left mt-auto">
+        <div className="app-sidebar__wide-section mx-4 my-4 p-4 border border-divider rounded-lg bg-bg-secondary text-left mt-auto">
           <p className="text-sm text-text-secondary mb-4 leading-normal font-medium">
             {t('sidebar.guestPrompt')}
           </p>
@@ -366,7 +366,7 @@ export default function Sidebar() {
       )}
 
       {/* Footer links */}
-      <div className="px-5 py-4 border-t border-divider mt-auto">
+      <div className="app-sidebar__wide-section px-5 py-4 border-t border-divider mt-auto">
         <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-text-tertiary font-medium">
           <a href="#" className="hover:underline">{t('sidebar.about')}</a>
           <a href="#" className="hover:underline">{t('sidebar.contact')}</a>

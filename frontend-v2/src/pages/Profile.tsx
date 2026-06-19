@@ -175,24 +175,24 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-[1000px] mx-auto px-4 py-8 animate-fade-in">
+    <div className="max-w-[1000px] mx-auto px-0 py-2 animate-fade-in sm:px-4 sm:py-8">
       {/* Profile Header */}
-      <div className="flex gap-6 items-start mb-8">
+      <div className="mb-6 flex flex-col items-center gap-4 text-center sm:mb-8 sm:flex-row sm:items-start sm:gap-6 sm:text-left">
         <img
           src={profile.avatarUrl || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300'}
           alt={profile.username}
-          className="w-28 h-28 rounded-full object-cover border-2 border-border"
+          className="h-24 w-24 rounded-full object-cover border-2 border-border sm:h-28 sm:w-28"
         />
-        <div className="flex-1 min-w-0 pt-2">
-          <div className="flex items-center gap-4 mb-1.5 flex-wrap">
-            <h1 className="text-2xl font-bold text-text-primary tracking-tight truncate flex items-center">
+        <div className="w-full min-w-0 flex-1 pt-0 sm:pt-2">
+          <div className="mb-1.5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
+            <h1 className="max-w-full text-2xl font-bold text-text-primary tracking-tight truncate flex items-center">
               {profile.username}
               {profile.isVerified && <VerifiedBadge />}
             </h1>
             {isOwner ? (
               <button
                 onClick={() => setIsEditOpen(true)}
-                className="px-6 py-1.5 border border-border text-text-primary font-bold text-sm rounded-md hover:bg-bg-hover transition-colors flex items-center gap-1.5 shadow-sm"
+                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-6 py-2 text-sm font-bold text-text-primary shadow-sm transition-colors hover:bg-bg-hover sm:w-auto sm:py-1.5"
               >
                 <svg width="16" height="16" viewBox="0 0 48 48" fill="none">
                   <path d="M7 42H43" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -204,7 +204,7 @@ export default function ProfilePage() {
               <button
                 onClick={handleFollowClick}
                 disabled={followMutation.isPending}
-                className={`px-8 py-1.5 rounded-md font-bold text-sm shadow-sm transition-colors ${
+                className={`w-full px-8 py-2 sm:w-auto sm:py-1.5 rounded-md font-bold text-sm shadow-sm transition-colors ${
                   profile.isFollowing
                     ? 'border border-border text-text-primary hover:bg-bg-hover'
                     : 'bg-primary text-white hover:bg-primary-hover'
@@ -214,10 +214,10 @@ export default function ProfilePage() {
               </button>
             )}
           </div>
-          <p className="text-lg text-text-secondary font-medium mb-4">{profile.displayName}</p>
+          <p className="mb-4 text-base font-medium text-text-secondary sm:text-lg">{profile.displayName}</p>
 
           {/* Stats block */}
-          <div className="flex gap-6 mb-4 text-sm">
+          <div className="mb-4 grid grid-cols-3 gap-2 text-sm sm:flex sm:gap-6">
             <span className="text-text-secondary">
               <strong className="text-text-primary text-base font-bold mr-1">{profile.followingCount}</strong> {t('profile.following')}
             </span>
@@ -237,7 +237,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-divider flex gap-8 mb-6">
+      <div className="mb-4 flex justify-center gap-8 border-b border-divider sm:mb-6 sm:justify-start">
         <button
           onClick={() => setActiveTab('PUBLIC')}
           className={`pb-3 font-semibold text-sm transition-colors relative ${
@@ -276,7 +276,7 @@ export default function ProfilePage() {
           <Empty description={t('profile.noVideos')} />
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:gap-4">
           {videos.map((video) => (
             <VideoCard
               key={video.id}

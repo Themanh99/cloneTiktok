@@ -60,9 +60,9 @@ export default function SearchPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1120px] animate-fade-in pb-12">
+    <div className="mx-auto max-w-[1120px] animate-fade-in pb-6 sm:pb-12">
       <div className="sticky top-[60px] z-20 -mx-2 bg-bg-primary/95 px-2 pb-3 pt-2 backdrop-blur">
-        <h1 className="mb-4 text-2xl font-black">{t('search.title')}</h1>
+        <h1 className="mb-3 text-xl font-black sm:mb-4 sm:text-2xl">{t('search.title')}</h1>
         <div className="relative">
           <SearchOutlined className="absolute left-4 top-1/2 -translate-y-1/2 text-lg text-text-tertiary" />
           <input
@@ -106,7 +106,7 @@ export default function SearchPage() {
           {showUsers && users.length > 0 && (
             <section>
               <h2 className="mb-4 text-lg font-bold">{t('search.accounts')}</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
                 {users.map((account) => (
                   <Link
                     key={account.id}
@@ -137,7 +137,7 @@ export default function SearchPage() {
           {showVideos && videos.length > 0 && (
             <section>
               <h2 className="mb-4 text-lg font-bold">{t('search.videos')}</h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
                 {videos.map((video) => (
                   <Link key={video.id} to={`/video/${video.id}`} className="group">
                     <div className="aspect-[9/16] overflow-hidden rounded-xl bg-black">

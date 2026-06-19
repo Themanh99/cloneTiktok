@@ -235,13 +235,13 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
   };
 
   return (
-    <div ref={containerRef} className="flex gap-4 max-w-[640px] mx-auto py-6 border-b border-divider">
+    <div ref={containerRef} className="mx-auto flex max-w-[640px] flex-col gap-3 border-b border-divider py-4 sm:flex-row sm:gap-4 sm:py-6">
       {/* Video Content Panel */}
       <div className="flex-1 flex flex-col">
         {/* Author Header */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full overflow-hidden border border-border bg-bg-secondary cursor-pointer">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <div className="h-9 w-9 shrink-0 rounded-full overflow-hidden border border-border bg-bg-secondary cursor-pointer sm:h-10 sm:w-10">
               {video.user.avatar ? (
                 <img src={video.user.avatar} alt={video.user.nickname} className="w-full h-full object-cover" />
               ) : (
@@ -250,9 +250,9 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
                 </div>
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="font-bold text-text-primary hover:underline cursor-pointer">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="truncate font-bold text-text-primary hover:underline cursor-pointer">
                   {video.user.nickname}
                 </span>
                 {video.tick && (
@@ -260,7 +260,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
                 )}
-                <span className="text-xs text-text-secondary font-medium">· {video.user.first_name}</span>
+                <span className="hidden truncate text-xs text-text-secondary font-medium sm:inline">· {video.user.first_name}</span>
               </div>
               <p className="text-sm text-text-primary mt-0.5 line-clamp-2 leading-relaxed">
                 {video.description}
@@ -272,7 +272,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
           {!isFollowing && user?.id !== video.user.id && (
             <button
               onClick={handleFollow}
-              className="px-4 py-1.5 rounded border border-primary text-primary hover:bg-primary-light font-bold text-sm transition-colors cursor-pointer"
+              className="shrink-0 rounded border border-primary px-3 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary-light cursor-pointer sm:px-4 sm:text-sm"
             >
               Follow
             </button>
@@ -280,7 +280,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         </div>
 
         {/* Player Container */}
-        <div className="relative aspect-[9/16] max-h-[580px] bg-black rounded-lg overflow-hidden group">
+        <div className="relative mx-auto aspect-[9/16] w-full max-h-[72svh] bg-black rounded-lg overflow-hidden group sm:max-h-[580px]">
           {/* Video element */}
           <video
             ref={videoRef}
@@ -303,7 +303,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
           </div>
 
           {/* Controls HUD */}
-          <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <div className="absolute inset-0 flex flex-col justify-between p-3 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-100 transition-opacity duration-300 sm:p-4 sm:opacity-0 sm:group-hover:opacity-100">
             {/* Top controls (Volume, etc) */}
             <div className="flex justify-end relative">
               <div 
@@ -365,9 +365,9 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
       </div>
 
       {/* Vertical Action Column (Right side) */}
-      <div className="flex flex-col items-center justify-end gap-5 mb-2 self-end">
+      <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 -mx-1 flex items-center justify-around gap-2 rounded-xl border border-border bg-bg-primary/95 px-2 py-2 shadow-lg backdrop-blur sm:static sm:mx-0 sm:flex-col sm:justify-end sm:gap-5 sm:self-end sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none">
         {/* Creator Avatar & follow status badge */}
-        <div className="relative mb-2">
+        <div className="relative mb-2 hidden sm:block">
           <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-bg-secondary shadow cursor-pointer">
             {video.user.avatar ? (
               <img src={video.user.avatar} alt={video.user.nickname} className="w-full h-full object-cover" />
@@ -392,7 +392,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         <div className="text-center">
           <button
             onClick={handleLike}
-            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-md transition-colors cursor-pointer border border-border bg-bg-secondary hover:bg-bg-hover ${
+            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-md transition-colors cursor-pointer border border-border bg-bg-secondary hover:bg-bg-hover ${
               isLiked ? 'text-primary' : 'text-text-primary'
             }`}
           >
@@ -407,7 +407,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         <div className="text-center">
           <button
             onClick={handleCommentClick}
-            className="w-12 h-12 rounded-full flex items-center justify-center shadow-md text-text-primary hover:bg-bg-hover transition-colors cursor-pointer border border-border bg-bg-secondary"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-md text-text-primary hover:bg-bg-hover transition-colors cursor-pointer border border-border bg-bg-secondary"
           >
             <CommentIcon />
           </button>
@@ -420,7 +420,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         <div className="text-center">
           <button
             onClick={handleBookmark}
-            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-md transition-colors cursor-pointer border border-border bg-bg-secondary hover:bg-bg-hover ${
+            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-md transition-colors cursor-pointer border border-border bg-bg-secondary hover:bg-bg-hover ${
               isBookmarked ? 'text-[#F7B500]' : 'text-text-primary'
             }`}
           >
@@ -434,7 +434,7 @@ export default function VideoCard({ video, active, onCommentsClick }: VideoCardP
         {/* Share Button */}
         <div className="text-center">
           <button
-            className="w-12 h-12 rounded-full flex items-center justify-center shadow-md text-text-primary hover:bg-bg-hover transition-colors cursor-pointer border border-border bg-bg-secondary"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-md text-text-primary hover:bg-bg-hover transition-colors cursor-pointer border border-border bg-bg-secondary"
           >
             <ShareIcon />
           </button>

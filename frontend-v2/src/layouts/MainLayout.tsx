@@ -12,8 +12,10 @@ export default function MainLayout() {
       <div className="flex flex-1 pt-[60px]">
         <Sidebar />
         <main
-          className={`flex-1 ml-[var(--width-sidebar)] overflow-y-auto ${
-            isVideoPage ? 'p-0' : 'px-6 py-6'
+          className={`app-main min-w-0 flex-1 overflow-y-auto ${
+            isVideoPage
+              ? 'app-main--video p-0'
+              : 'app-main--content px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6'
           }`}
         >
           <Outlet />

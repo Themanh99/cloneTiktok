@@ -128,7 +128,7 @@ export default function LoginModal() {
       <div className="absolute inset-0 cursor-pointer" onClick={closeModal} />
 
       {/* Modal Box */}
-      <div className="relative w-full max-w-[480px] bg-bg-primary rounded-xl shadow-2xl overflow-hidden border border-border flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-[480px] bg-bg-primary rounded-xl shadow-2xl overflow-hidden border border-border flex flex-col max-h-[calc(100dvh-24px)] sm:max-h-[90vh]">
         {/* Accent Top Bar */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#25F4EE] via-primary to-[#FE2C55]" />
 
@@ -141,7 +141,7 @@ export default function LoginModal() {
         </button>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-10 py-8">
+        <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-10 sm:py-8">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-extrabold text-text-primary mb-2">
               {isLogin ? t('auth.loginTitle') : t('auth.signupTitle')}
@@ -274,7 +274,7 @@ export default function LoginModal() {
         </div>
 
         {/* Modal Switch mode footer */}
-        <div className="bg-bg-secondary border-t border-divider px-10 py-4 flex items-center justify-center gap-2 text-sm text-text-primary font-medium">
+        <div className="bg-bg-secondary border-t border-divider px-5 py-4 sm:px-10 flex items-center justify-center gap-2 text-sm text-text-primary font-medium">
           <span>{isLogin ? t('auth.switchSignup') : t('auth.switchLogin')}</span>
           <button
             onClick={() => setMode(isLogin ? 'signup' : 'login')}

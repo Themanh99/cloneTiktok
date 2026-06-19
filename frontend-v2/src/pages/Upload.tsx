@@ -229,10 +229,10 @@ export default function UploadPage() {
   ];
 
   return (
-    <div className="max-w-[1080px] mx-auto py-8 px-4 min-h-[90vh]">
+    <div className="mx-auto min-h-[90vh] max-w-[1080px] px-0 py-0 sm:px-2 sm:py-5 lg:px-4 lg:py-8">
       <Card
         className="shadow-xl"
-        styles={{ body: { padding: 32 } }}
+        styles={{ body: { padding: 'clamp(16px, 4vw, 32px)' } }}
       >
         {/* Header */}
         <div className="mb-6">
@@ -260,7 +260,7 @@ export default function UploadPage() {
           />
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
           {/* ── LEFT: DROPZONE / PREVIEW ── */}
           <div className="md:col-span-1 flex flex-col items-center justify-start">
             {!previewUrl ? (
@@ -272,7 +272,7 @@ export default function UploadPage() {
                   return false; // Prevent automatic upload
                 }}
                 className="!w-full !border-2"
-                style={{ minHeight: 400, display: 'flex', alignItems: 'center' }}
+                style={{ minHeight: 'min(400px, 58vh)', display: 'flex', alignItems: 'center' }}
               >
                 <div className="flex flex-col items-center px-4 py-8">
                   <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4">
@@ -441,7 +441,7 @@ export default function UploadPage() {
 
             {/* Action Buttons */}
             <Divider className="!my-2" />
-            <div className="flex gap-4">
+            <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 -mx-4 flex flex-col-reverse gap-2 border-t border-divider bg-bg-primary/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:gap-4 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
               <Button
                 size="large"
                 block

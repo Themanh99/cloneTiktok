@@ -97,7 +97,7 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-[60px] bg-bg-primary border-b border-border flex items-center justify-between px-6 z-40">
+    <header className="fixed top-0 left-0 right-0 h-[60px] bg-bg-primary border-b border-border flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 z-40">
       {/* Left: Logo */}
       <Link to="/" className="flex items-center gap-1.5 cursor-pointer text-text-primary">
         <LogoIcon />
@@ -105,7 +105,7 @@ export default function Header() {
       </Link>
 
       {/* Center: Search Bar */}
-      <form ref={searchRef} onSubmit={handleSearch} className="hidden md:flex relative w-[360px] lg:w-[500px]">
+      <form ref={searchRef} onSubmit={handleSearch} className="relative mx-3 hidden min-w-0 flex-1 md:flex md:max-w-[360px] lg:max-w-[500px]">
         <input
           type="text"
           placeholder={t('header.searchPlaceholder')}
@@ -193,23 +193,30 @@ export default function Header() {
       </form>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 lg:gap-4">
+        <Link
+          to={routes.search}
+          aria-label={t('header.searchPlaceholder')}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-text-primary hover:bg-bg-hover md:hidden"
+        >
+          <SearchOutlined className="text-lg" />
+        </Link>
         {user ? (
           <>
             {/* Upload Button */}
             <Link
               to={routes.upload}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-sm border border-border bg-bg-primary hover:bg-bg-secondary text-text-primary font-semibold text-sm transition-colors"
+              className="flex h-9 items-center gap-2 rounded-md border border-border bg-bg-primary px-2.5 text-text-primary font-semibold text-sm transition-colors hover:bg-bg-secondary sm:px-3 lg:px-4"
             >
               <UploadIcon />
-              <span>{t('header.upload')}</span>
+              <span className="hidden lg:inline">{t('header.upload')}</span>
             </Link>
 
             {/* Message/Inbox Icons */}
-            <button className="text-text-primary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-bg-hover relative">
+            <button className="hidden text-text-primary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-bg-hover relative md:block">
               <MessageIcon />
             </button>
-            <button className="text-text-primary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-bg-hover relative">
+            <button className="hidden text-text-primary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-bg-hover relative md:block">
               <InboxIcon />
               <span className="absolute top-1 right-1 bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none scale-75">
                 8
@@ -260,14 +267,14 @@ export default function Header() {
             {/* Guest Actions */}
             <Link
               to={routes.upload}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-sm border border-border bg-bg-primary hover:bg-bg-secondary text-text-primary font-semibold text-sm transition-colors"
+              className="hidden h-9 items-center gap-2 rounded-md border border-border bg-bg-primary px-3 text-text-primary font-semibold text-sm transition-colors hover:bg-bg-secondary sm:flex"
             >
               <UploadIcon />
-              <span>{t('header.upload')}</span>
+              <span className="hidden lg:inline">{t('header.upload')}</span>
             </Link>
             <button
               onClick={() => openModal('login')}
-              className="px-5 py-1.5 rounded-md bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-sm transition-colors"
+              className="h-9 rounded-md bg-primary px-3 text-white font-bold text-sm shadow-sm transition-colors hover:bg-primary-hover sm:px-5"
             >
               {t('header.login')}
             </button>

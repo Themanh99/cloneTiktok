@@ -173,7 +173,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex-1 w-full max-w-[730px] mx-auto px-4 pb-20 select-none">
+    <div className="mx-auto w-full max-w-[730px] flex-1 px-0 pb-8 select-none sm:px-4 sm:pb-20">
       <div className="flex flex-col">
         {videos.map((video) => (
           <div

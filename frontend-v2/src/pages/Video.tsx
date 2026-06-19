@@ -220,10 +220,10 @@ export default function VideoPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100vh-60px)] w-full overflow-hidden bg-bg-primary animate-fade-in">
+    <div className="relative flex min-h-[calc(100dvh-124px)] w-full flex-col overflow-y-auto bg-bg-primary animate-fade-in lg:h-[calc(100dvh-60px)] lg:min-h-0 lg:flex-row lg:overflow-hidden">
       
       {/* LEFT COLUMN: VIDEO VIEW */}
-      <div className="relative flex-[1.5] bg-black flex items-center justify-center select-none group/video">
+      <div className="group/video relative flex h-[58svh] min-h-[420px] shrink-0 select-none items-center justify-center bg-black lg:h-auto lg:min-h-0 lg:flex-[1.5]">
         
         {/* Backdrop Blurred Poster */}
         <img
@@ -241,7 +241,7 @@ export default function VideoPage() {
               navigate(`/@${video.author.username}`);
             }
           }}
-          className="absolute top-5 left-5 p-2 bg-black/45 hover:bg-black/60 rounded-full text-white cursor-pointer transition-colors z-30 shadow-md"
+          className="absolute left-3 top-3 z-30 rounded-full bg-black/45 p-2 text-white shadow-md transition-colors hover:bg-black/60 cursor-pointer sm:left-5 sm:top-5"
         >
           <svg width="24" height="24" viewBox="0 0 48 48" fill="none">
             <path d="M14 14L34 34" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -250,7 +250,7 @@ export default function VideoPage() {
         </button>
 
         {/* Video Player Box */}
-        <div className="relative aspect-[9/16] h-[calc(100vh-92px)] max-h-[800px] rounded-lg overflow-hidden bg-black shadow-2xl flex items-center justify-center">
+        <div className="relative flex h-[56svh] max-h-[800px] aspect-[9/16] items-center justify-center overflow-hidden bg-black shadow-2xl sm:rounded-lg lg:h-[calc(100dvh-92px)]">
           <video
             ref={videoRef}
             src={video.originalUrl}
@@ -280,7 +280,7 @@ export default function VideoPage() {
           )}
 
           {/* Bottom Custom Progress Bar & Timer */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 bg-black/35 px-4 py-2.5 rounded-lg text-white text-xs backdrop-blur-sm opacity-0 group-hover/video:opacity-100 transition-opacity duration-300">
+          <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2 rounded-lg bg-black/35 px-3 py-2 text-[11px] text-white opacity-100 backdrop-blur-sm transition-opacity duration-300 sm:bottom-4 sm:left-4 sm:right-4 sm:gap-3 sm:px-4 sm:py-2.5 sm:text-xs lg:opacity-0 lg:group-hover/video:opacity-100">
             <button onClick={togglePlay} className="hover:text-primary transition-colors">
               {isPlaying ? (
                 <svg width="18" height="18" viewBox="0 0 48 48" fill="currentColor">
@@ -304,7 +304,7 @@ export default function VideoPage() {
               className="flex-1 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
             />
 
-            <span>
+            <span className="hidden sm:inline">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
 
@@ -328,7 +328,7 @@ export default function VideoPage() {
                 step={0.05}
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-16 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                className="hidden w-16 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none sm:block"
               />
             </div>
           </div>
@@ -336,10 +336,10 @@ export default function VideoPage() {
       </div>
 
       {/* RIGHT COLUMN: INFO & COMMENTS */}
-      <div className="w-[450px] border-l border-divider bg-bg-primary flex flex-col h-full shrink-0">
+      <div className="flex w-full shrink-0 flex-col border-t border-divider bg-bg-primary lg:h-full lg:w-[450px] lg:border-l lg:border-t-0">
         
         {/* Header Block: User Info */}
-        <div className="p-6 border-b border-divider">
+        <div className="border-b border-divider p-4 sm:p-5 lg:p-6">
           <div className="flex items-center gap-3">
             <img
               onClick={() => navigate(`/@${video.author.username}`)}
@@ -360,7 +360,7 @@ export default function VideoPage() {
               <p className="text-xs text-text-secondary truncate">{video.author.displayName}</p>
             </div>
             {video.author.id !== user?.id && (
-              <button className="px-5 py-1 text-sm bg-primary text-white font-bold rounded hover:bg-primary-hover transition-colors shadow-sm">
+              <button className="shrink-0 rounded bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-primary-hover sm:px-5 sm:py-1 sm:text-sm">
                 Follow
               </button>
             )}
@@ -393,8 +393,8 @@ export default function VideoPage() {
         </div>
 
         {/* Stats & Actions Row */}
-        <div className="px-6 py-3 border-b border-divider flex items-center justify-between bg-bg-secondary">
-          <div className="flex gap-6">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-divider bg-bg-secondary px-3 py-2.5 sm:px-5 lg:static lg:px-6 lg:py-3">
+          <div className="flex flex-1 items-center justify-around gap-2 sm:justify-start sm:gap-6">
             {/* Like */}
             <button
               onClick={() => {
@@ -474,7 +474,7 @@ export default function VideoPage() {
         </div>
 
         {/* Scrollable Comments area */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        <div className="max-h-[55svh] flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-5 lg:max-h-none lg:px-6">
           {isCommentsLoading ? (
             <div className="flex justify-center py-8">
               <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -496,7 +496,7 @@ export default function VideoPage() {
         </div>
 
         {/* Comment input panel (Fixed bottom) */}
-        <div className="p-4 border-t border-divider bg-bg-primary">
+        <div className="sticky bottom-0 z-20 border-t border-divider bg-bg-primary p-3 sm:p-4 lg:static">
           {/* Reply alert */}
           {replyToComment && (() => {
             const replyUser = replyToComment.author || replyToComment.user;
@@ -513,19 +513,19 @@ export default function VideoPage() {
             );
           })()}
 
-          <form onSubmit={handleCommentSubmit} className="flex gap-2 items-center">
+          <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
             <input
               ref={inputRef}
               type="text"
               value={commentContent}
               onChange={(e) => setCommentContent(e.target.value)}
               placeholder={replyToComment ? `${t('common.reply')} @${(replyToComment.author || replyToComment.user)?.username || 'user'}...` : t('video.addComment')}
-              className="flex-1 bg-bg-secondary text-text-primary border border-border/30 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors"
+              className="min-w-0 flex-1 bg-bg-secondary text-text-primary border border-border/30 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors sm:px-4"
             />
             <button
               type="submit"
               disabled={postCommentMutation.isPending || !commentContent.trim()}
-              className="px-5 py-2.5 bg-primary text-white font-bold rounded-lg text-sm hover:bg-primary-hover disabled:opacity-50 transition-colors shadow-sm"
+              className="shrink-0 rounded-lg bg-primary px-3 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-50 sm:px-5"
             >
               {postCommentMutation.isPending ? t('common.loading') : t('common.post')}
             </button>
